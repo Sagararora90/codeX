@@ -17,8 +17,8 @@ function SyntaxHighlightedCode(props) {
   const ref = useRef(null);
 
   React.useEffect(() => {
-    if (ref.current && props.className?.includes("lang-") && window.hljs) {
-      window.hljs.highlightElement(ref.current);
+    if (ref.current && props.className?.includes("lang-") && hljs) {
+      hljs.highlightElement(ref.current);
       ref.current.removeAttribute("data-highlighted");
     }
   }, [props.className, props.children]);
