@@ -944,6 +944,8 @@ const Project = () => {
     
     if (!webContainer) {
       console.log("WebContainer not found, attempting to boot...");
+      console.log("Cross-Origin Isolated:", window.crossOriginIsolated);
+      
       getWebContainer()
         .then((container) => {
           console.log("✅ WebContainer booted successfully:", container);
@@ -954,10 +956,17 @@ const Project = () => {
           let errorMessage = "Failed to initialize WebContainer.";
           
           if (!window.crossOriginIsolated) {
-            errorMessage += "\n\nReason: Your browser is not cross-origin isolated. This is usually caused by missing security headers (COOP/COEP) or using an unsupported browser.";
+            errorMessage += "\n\nCRITICAL: Your browser is NOT cross-origin isolated. This is required for WebContainers to run.";
+            errorMessage += "\n\nTroubleshooting:";
+            errorMessage += "\n1. Ensure you are using HTTPS (or localhost).";
+            errorMessage += "\n2. Check if COOP/COEP headers are set (we've added them to vercel.json).";
+            errorMessage += "\n3. Try a hard refresh (Ctrl+F5) or Incognito mode.";
+            errorMessage += "\n4. Some browsers like Brave might require manual settings for isolation.";
+          } else {
+            errorMessage += `\n\nError details: ${err.message || 'Unknown error'}`;
           }
           
-          alert(errorMessage + "\n\nPlease check the console for more details and refresh the page.");
+          alert(errorMessage + "\n\nPlease check the browser console for details.");
         });
     } else {
       console.log("WebContainer already initialized");
