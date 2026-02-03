@@ -17,6 +17,22 @@ const userSchema = new mongoose.Schema({
         type: String,
         select: false,
     },
+    profileImage: {
+        type: String,
+        default: null
+    },
+    editorTheme: {
+        type: String,
+        default: 'vs-dark' // vs-dark, vs-light, monokai
+    },
+    appTheme: {
+        type: String,
+        default: 'dark' // dark, light
+    },
+    fullname: {
+        type: String,
+        trim: true,
+    },
     username: {
         type: String,
         default: function() {

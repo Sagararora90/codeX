@@ -10,10 +10,10 @@ export const createProject = async (req, res) => {
         return res.status(400).json({ errors: errors.array() });
     }
     try {
-        const { name } = req.body;
+        const { name, description, techStack } = req.body;
         const loggedInUser = await userModel.findOne({ email: req.user.email });
         const userId = loggedInUser._id;
-        const newProject = await projectService.createProject({ name, userId });
+        const newProject = await projectService.createProject({ name, userId, description, techStack });
         res.status(201).json(newProject);
     } catch (error) {
         console.log(error);
@@ -122,6 +122,21 @@ export const updateMessages = async (req, res) => {
     try {
         const { projectId, messages } = req.body;
         const project = await projectService.updateMessages({ projectId, messages });
+        return res.status(200).json({ project });
+    } catch (error) {
+        console.log(error);
+        res.status(400).json({ error: error.message });
+    }
+}
+
+export const renameProject = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+    try {
+        const { projectId, name, description, techStack } = req.body;
+        const project = await projectService.updateProjectDetails({ projectId, name, description, techStack });
         return res.status(200).json({ project });
     } catch (error) {
         console.log(error);

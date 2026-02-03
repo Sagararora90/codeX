@@ -2,7 +2,7 @@ import projectModel from '../models/project.model.js';
 import mongoose from 'mongoose';
 
 export const createProject = async ({
-    name, userId
+    name, userId, description, techStack
 }) => {
     if (!name) {
         throw new Error('Name is required')
@@ -15,7 +15,9 @@ export const createProject = async ({
     try {
         project = await projectModel.create({
             name,
-            users: [ userId ]
+            users: [ userId ],
+            description,
+            techStack
         });
     } catch (error) {
         if (error.code === 11000) {
@@ -209,4 +211,22 @@ export const deleteProjectById = async ({ projectId, userId }) => {
     await projectModel.findOneAndDelete({ _id: projectId });
     
     return true;
+}
+
+export const updateProjectDetails = async ({ projectId, name, description, techStack }) => {
+    if (!projectId) throw new Error("projectId is required");
+    if (!mongoose.Types.ObjectId.isValid(projectId)) throw new Error("Invalid projectId");
+
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (description) updateData.description = description;
+    if (techStack) updateData.techStack = techStack;
+
+    const project = await projectModel.findOneAndUpdate(
+        { _id: projectId },
+        updateData,
+        { new: true }
+    );
+
+    return project;
 }

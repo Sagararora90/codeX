@@ -18,11 +18,19 @@ const projectSchema = new mongoose.Schema({
         type: Object,
         default: {}
     },
+    description: {
+        type: String,
+        default: "A collaborative project."
+    },
+    techStack: {
+        type: [String],
+        default: []
+    },
     messages: {
         type: Array,
         default: []
     }
-})
+}, { timestamps: true })
 
 const Project = mongoose.model('project', projectSchema);
 

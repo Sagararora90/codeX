@@ -3,7 +3,7 @@ import userModel from '../models/user.model.js';
 
 
 export const createUser = async ({
-    email, password, username
+    email, password, username, fullname
 }) => {
 
     if (!email || !password || !username) {
@@ -15,6 +15,7 @@ export const createUser = async ({
     const user = await userModel.create({
         email,
         username,
+        fullname,
         password: hashedPassword
     });
 

@@ -50,6 +50,12 @@ router.post('/execute',
     projectController.executeProjectCode
 )
 
+router.put('/rename',
+    authMiddleWare.authUser,
+    body('projectId').isString().withMessage('Project ID is required'),
+    projectController.renameProject
+)
+
 router.delete('/delete/:projectId',
     authMiddleWare.authUser,
     projectController.deleteProject

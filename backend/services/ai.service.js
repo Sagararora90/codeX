@@ -2,8 +2,6 @@ import fetch from "node-fetch";
 import Groq from "groq-sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const OLLAMA_URL = "http://localhost:11434/api/chat";
-
 // Initialize Groq client
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY || ""
@@ -433,27 +431,325 @@ const FALLBACK_TEMPLATES = {
   cpp: (prompt) => {
     const p = prompt.toLowerCase();
     
-    // Palindrome
-    if (p.includes('palindrome')) {
+    // Coin Change Problem
+    if (p.includes('coin') && (p.includes('change') || p.includes('dp') || p.includes('dynamic'))) {
       return {
         type: "fileTree",
         files: {
-          "solution.cpp": {
+          "coin_change.cpp": {
             file: {
-              contents: `// ${extractTaskFromPrompt(prompt)}\n// Check if integer is palindrome\n\n#include <iostream>\n#include <string>\n#include <algorithm>\nusing namespace std;\n\nbool isPalindrome(int x) {\n    // Negative numbers are not palindromes\n    if (x < 0) return false;\n    \n    // Convert to string and check\n    string str = to_string(x);\n    string rev = str;\n    reverse(rev.begin(), rev.end());\n    \n    return str == rev;\n}\n\nint main() {\n    cout << boolalpha;\n    cout << isPalindrome(121) << endl;  // true\n    cout << isPalindrome(-121) << endl; // false\n    cout << isPalindrome(10) << endl;   // false\n    return 0;\n}`
+              contents: `// ${extractTaskFromPrompt(prompt)}
+// Coin Change Problem - Dynamic Programming
+
+#include <iostream>
+#include <vector>
+#include <climits>
+using namespace std;
+
+// Returns minimum coins needed to make amount
+// Returns -1 if not possible
+int coinChange(vector<int>& coins, int amount) {
+    // dp[i] = minimum coins needed for amount i
+    vector<int> dp(amount + 1, INT_MAX);
+    dp[0] = 0;  // 0 coins needed for amount 0
+    
+    for (int i = 1; i <= amount; i++) {
+        for (int coin : coins) {
+            if (coin <= i && dp[i - coin] != INT_MAX) {
+                dp[i] = min(dp[i], dp[i - coin] + 1);
+            }
+        }
+    }
+    
+    return dp[amount] == INT_MAX ? -1 : dp[amount];
+}
+
+int main() {
+    vector<int> coins = {1, 2, 5};
+    int amount = 11;
+    
+    int result = coinChange(coins, amount);
+    
+    if (result == -1) {
+        cout << "Cannot make amount " << amount << endl;
+    } else {
+        cout << "Minimum coins needed for " << amount << ": " << result << endl;
+    }
+    
+    // Test cases
+    cout << "\\nMore test cases:" << endl;
+    cout << "Amount 3: " << coinChange(coins, 3) << " coins" << endl;   // 2 (1+2)
+    cout << "Amount 6: " << coinChange(coins, 6) << " coins" << endl;   // 2 (1+5)
+    cout << "Amount 10: " << coinChange(coins, 10) << " coins" << endl; // 2 (5+5)
+    
+    return 0;
+}`
             }
           }
         }
       };
     }
     
-    // Default C++
+    // Palindrome
+    if (p.includes('palindrome')) {
+      return {
+        type: "fileTree",
+        files: {
+          "palindrome.cpp": {
+            file: {
+              contents: `// ${extractTaskFromPrompt(prompt)}
+// Check if integer is palindrome
+
+#include <iostream>
+#include <string>
+#include <algorithm>
+using namespace std;
+
+bool isPalindrome(int x) {
+    if (x < 0) return false;
+    
+    string str = to_string(x);
+    string rev = str;
+    reverse(rev.begin(), rev.end());
+    
+    return str == rev;
+}
+
+int main() {
+    cout << boolalpha;
+    cout << isPalindrome(121) << endl;  // true
+    cout << isPalindrome(-121) << endl; // false
+    cout << isPalindrome(10) << endl;   // false
+    return 0;
+}`
+            }
+          }
+        }
+      };
+    }
+    
+    // Fibonacci
+    if (p.includes('fibonacci') || p.includes('fib')) {
+      return {
+        type: "fileTree",
+        files: {
+          "fibonacci.cpp": {
+            file: {
+              contents: `// ${extractTaskFromPrompt(prompt)}
+// Fibonacci Sequence
+
+#include <iostream>
+#include <vector>
+using namespace std;
+
+// Iterative approach - O(n) time, O(1) space
+long long fibonacci(int n) {
+    if (n <= 1) return n;
+    
+    long long prev = 0, curr = 1;
+    for (int i = 2; i <= n; i++) {
+        long long next = prev + curr;
+        prev = curr;
+        curr = next;
+    }
+    return curr;
+}
+
+// DP approach with memoization
+long long fibonacciDP(int n, vector<long long>& memo) {
+    if (n <= 1) return n;
+    if (memo[n] != -1) return memo[n];
+    
+    memo[n] = fibonacciDP(n-1, memo) + fibonacciDP(n-2, memo);
+    return memo[n];
+}
+
+int main() {
+    cout << "Fibonacci sequence:" << endl;
+    for (int i = 0; i <= 10; i++) {
+        cout << "F(" << i << ") = " << fibonacci(i) << endl;
+    }
+    return 0;
+}`
+            }
+          }
+        }
+      };
+    }
+    
+    // Sorting
+    if (p.includes('sort') || p.includes('bubble') || p.includes('quick') || p.includes('merge')) {
+      return {
+        type: "fileTree",
+        files: {
+          "sorting.cpp": {
+            file: {
+              contents: `// ${extractTaskFromPrompt(prompt)}
+// Sorting Algorithms
+
+#include <iostream>
+#include <vector>
+using namespace std;
+
+void printArray(vector<int>& arr) {
+    for (int x : arr) cout << x << " ";
+    cout << endl;
+}
+
+// Bubble Sort - O(n^2)
+void bubbleSort(vector<int>& arr) {
+    int n = arr.size();
+    for (int i = 0; i < n-1; i++) {
+        for (int j = 0; j < n-i-1; j++) {
+            if (arr[j] > arr[j+1]) {
+                swap(arr[j], arr[j+1]);
+            }
+        }
+    }
+}
+
+// Quick Sort - O(n log n) average
+int partition(vector<int>& arr, int low, int high) {
+    int pivot = arr[high];
+    int i = low - 1;
+    for (int j = low; j < high; j++) {
+        if (arr[j] < pivot) {
+            i++;
+            swap(arr[i], arr[j]);
+        }
+    }
+    swap(arr[i+1], arr[high]);
+    return i + 1;
+}
+
+void quickSort(vector<int>& arr, int low, int high) {
+    if (low < high) {
+        int pi = partition(arr, low, high);
+        quickSort(arr, low, pi - 1);
+        quickSort(arr, pi + 1, high);
+    }
+}
+
+int main() {
+    vector<int> arr = {64, 34, 25, 12, 22, 11, 90};
+    
+    cout << "Original: "; printArray(arr);
+    
+    quickSort(arr, 0, arr.size() - 1);
+    
+    cout << "Sorted: "; printArray(arr);
+    
+    return 0;
+}`
+            }
+          }
+        }
+      };
+    }
+    
+    // Factorial
+    if (p.includes('factorial')) {
+      return {
+        type: "fileTree",
+        files: {
+          "factorial.cpp": {
+            file: {
+              contents: `// ${extractTaskFromPrompt(prompt)}
+// Factorial Calculation
+
+#include <iostream>
+using namespace std;
+
+long long factorialIterative(int n) {
+    long long result = 1;
+    for (int i = 2; i <= n; i++) {
+        result *= i;
+    }
+    return result;
+}
+
+long long factorialRecursive(int n) {
+    if (n <= 1) return 1;
+    return n * factorialRecursive(n - 1);
+}
+
+int main() {
+    for (int i = 0; i <= 10; i++) {
+        cout << i << "! = " << factorialIterative(i) << endl;
+    }
+    return 0;
+}`
+            }
+          }
+        }
+      };
+    }
+    
+    // Prime numbers
+    if (p.includes('prime')) {
+      return {
+        type: "fileTree",
+        files: {
+          "prime.cpp": {
+            file: {
+              contents: `// ${extractTaskFromPrompt(prompt)}
+// Prime Number Check
+
+#include <iostream>
+#include <cmath>
+using namespace std;
+
+bool isPrime(int n) {
+    if (n <= 1) return false;
+    if (n <= 3) return true;
+    if (n % 2 == 0 || n % 3 == 0) return false;
+    
+    for (int i = 5; i <= sqrt(n); i += 6) {
+        if (n % i == 0 || n % (i + 2) == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+int main() {
+    cout << boolalpha;
+    cout << "Is 2 prime? " << isPrime(2) << endl;   // true
+    cout << "Is 17 prime? " << isPrime(17) << endl; // true
+    cout << "Is 4 prime? " << isPrime(4) << endl;   // false
+    cout << "Is 97 prime? " << isPrime(97) << endl; // true
+    return 0;
+}`
+            }
+          }
+        }
+      };
+    }
+    
+    // Default C++ - generic algorithm template (not Hello World!)
     return {
       type: "fileTree",
       files: {
-        "main.cpp": {
+        "solution.cpp": {
           file: {
-            contents: `// ${extractTaskFromPrompt(prompt)}\n\n#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hello World" << endl;\n    // Add your code here\n    return 0;\n}`
+            contents: `// ${extractTaskFromPrompt(prompt)}
+
+#include <iostream>
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+// TODO: Implement the requested functionality
+// Based on: ${prompt.substring(0, 100)}
+
+int main() {
+    // Your algorithm implementation goes here
+    // This is a template - the AI should provide actual code
+    
+    cout << "Implement: ${extractTaskFromPrompt(prompt).replace(/"/g, '\\"')}" << endl;
+    
+    return 0;
+}`
           }
         }
       }
@@ -682,73 +978,14 @@ async function generateGeminiResult(userPrompt) {
   }
 }
 
-export async function generateResult(userPrompt, modelType = 'llama') {
+export async function generateResult(userPrompt, modelType = 'groq') {
   // Route to appropriate model
   if (modelType === 'gemini') {
     return generateGeminiResult(userPrompt);
   }
 
-  if (modelType === 'groq') {
-    return generateResultWithGroq(userPrompt);
-  }
-
-  // Default to Llama
-  try {
-    // Analyze the prompt
-    const analysis = analyzePrompt(userPrompt);
-    const enhancedPrompt = buildPrompt(userPrompt, analysis);
-
-    console.log(`\n🤖 [Llama] Hey! I got your request...`);
-    console.log(`📋 You want: ${analysis.type === 'chat' ? 'an answer' : `code in ${analysis.language}`}`);
-
-    const response = await fetch(OLLAMA_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "llama3",
-        stream: false,
-        temperature: 0.2,
-        messages: [
-          { role: "system", content: SYSTEM_INSTRUCTION },
-          { role: "user", content: enhancedPrompt }
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      console.error("❌ Oops! AI server issue:", await response.text());
-      throw new Error("API request failed");
-    }
-
-    const data = await response.json();
-    const content = data.message?.content?.trim();
-
-    if (!content) {
-      console.warn("⚠️ AI gave empty response, using my backup solution...");
-      return JSON.stringify(generateFallback(userPrompt));
-    }
-
-    try {
-      // Clean and parse JSON
-      const cleaned = cleanJSON(content);
-      const parsed = JSON.parse(cleaned);
-
-      // Validate the response
-      validateResponse(parsed);
-
-      console.log("✅ Perfect! Generated your " + (parsed.type === 'chat' ? 'answer' : 'code'));
-      return JSON.stringify(parsed);
-
-    } catch (parseError) {
-      console.warn("⚠️ AI messed up the format, using my backup solution...");
-      return JSON.stringify(generateFallback(userPrompt));
-    }
-
-  } catch (error) {
-    console.error("❌ Something went wrong:", error.message);
-    console.log("🔄 Don't worry, using backup solution...");
-    return JSON.stringify(generateFallback(userPrompt));
-  }
+  // Default to Groq (removed Ollama/Llama)
+  return generateResultWithGroq(userPrompt);
 }
 
 /* ================= USAGE EXAMPLE ================= */

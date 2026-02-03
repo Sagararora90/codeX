@@ -17,7 +17,29 @@ if (!fs.existsSync(TEMP_DIR)) {
 export const executeCode = async (language, code, filename = 'script') => {
     const timestamp = Date.now();
     const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const filePath = path.join(TEMP_DIR, `${safeFilename}`);
+    
+    // Add proper extension based on language
+    let extension = '';
+    switch (language.toLowerCase()) {
+        case 'python':
+        case 'py':
+            extension = '.py';
+            break;
+        case 'cpp':
+        case 'c++':
+            extension = '.cpp';
+            break;
+        case 'c':
+            extension = '.c';
+            break;
+        case 'java':
+            extension = '.java';
+            break;
+    }
+    
+    // Remove existing extension from filename and add the correct one
+    const baseFilename = safeFilename.replace(/\.[^/.]+$/, '');
+    const filePath = path.join(TEMP_DIR, `${baseFilename}_${timestamp}${extension}`);
     
     let command;
     let output;

@@ -274,14 +274,119 @@ export const acceptInvitationController = async (req, res) => {
         res.status(500).send(error.message);
     }
 }
+// Upload profile image
 export const uploadProfileImageController = async (req, res) => {
     try {
         if (!req.file) {
-            return res.status(400).send('No file uploaded.');
+            return res.status(400).json({ error: 'No file uploaded' });
         }
-        // Save file path to user model logic here if needed
-        res.status(200).json({ message: 'File uploaded', filePath: req.file.path });
+        
+        const imageUrl = `/uploads/${req.file.filename}`;
+        
+        const user = await userModel.findOneAndUpdate(
+            { email: req.user.email },
+            { profileImage: imageUrl },
+            { new: true }
+        ).select('-password');
+        
+        res.status(200).json({ user, message: 'File uploaded successfully' });
     } catch(err) {
-        res.status(500).send(err.message);
+        console.log(err);
+        res.status(500).json({ error: err.message });
+    }
+}
+
+// Change Password
+export const changePasswordController = async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ error: 'Current and new password are required' });
+        }
+        
+        if (newPassword.length < 3) {
+            return res.status(400).json({ error: 'New password must be at least 3 characters long' });
+        }
+        
+        const user = await userModel.findOne({ email: req.user.email }).select('+password');
+        
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        const isMatch = await user.isValidPassword(currentPassword);
+        
+        if (!isMatch) {
+            return res.status(400).json({ error: 'Incorrect current password' });
+        }
+        
+        const hashedPassword = await userModel.hashPassword(newPassword);
+        user.password = hashedPassword;
+        await user.save();
+        
+        res.status(200).json({ message: 'Password changed successfully' });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ error: error.message });
+    }
+}
+
+// Delete User Account
+export const deleteUserController = async (req, res) => {
+    try {
+        const { password, reason } = req.body;
+
+        if (!password) {
+            return res.status(400).json({ error: 'Password is required to delete account' });
+        }
+
+        const user = await userModel.findOne({ email: req.user.email }).select('+password');
+        
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const isMatch = await user.isValidPassword(password);
+        if (!isMatch) {
+            return res.status(401).json({ error: 'Incorrect password' });
+        }
+
+        await userModel.deleteOne({ email: req.user.email });
+        
+        // Optionally store the Feedback/Reason in a separate log collection
+        if (reason) {
+            console.log(`User ${req.user.email} deleted account. Reason: ${reason}`);
+        }
+        
+        res.status(200).json({ message: 'Account deleted successfully' });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ error: error.message });
+    }
+}
+
+// Update Theme
+export const updateThemeController = async (req, res) => {
+    try {
+        const { theme, type } = req.body;
+        
+        let updateField = {};
+        if (type === 'app') {
+            updateField = { appTheme: theme };
+        } else {
+            updateField = { editorTheme: theme };
+        }
+        
+        const user = await userModel.findOneAndUpdate(
+            { email: req.user.email },
+            updateField,
+            { new: true }
+        );
+        
+        res.status(200).json({ user, message: 'Theme updated successfully' });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ error: error.message });
     }
 }

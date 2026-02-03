@@ -9,6 +9,7 @@ const router = Router();
 router.post('/register',
     body('email').isEmail().withMessage('Email must be a valid email address'),
     body('username').isString().isLength({ min: 3 }).withMessage('Username must be at least 3 characters long'),
+    body('fullname').isString().isLength({ min: 3 }).withMessage('Full Name must be at least 3 characters long'),
     body('password').isLength({ min: 3 }).withMessage('Password must be at least 3 characters long'),
     userController.createUserController);
 
@@ -38,5 +39,11 @@ router.post('/upload-image',
     upload.single('image'), 
     userController.uploadProfileImageController
 );
+
+router.post('/change-password', authMiddleware.authUser, userController.changePasswordController);
+
+router.delete('/delete', authMiddleware.authUser, userController.deleteUserController);
+
+router.put('/update-theme', authMiddleware.authUser, userController.updateThemeController);
 
 export default router;

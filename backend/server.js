@@ -90,8 +90,12 @@ io.on('connection', socket => {
 
 
             const prompt = message.replace('@ai', '');
-
-            const result = await generateResult(prompt);
+            
+            // Use the user's selected model type (defaults to 'groq' if not specified)
+            const modelType = data.modelType || 'groq';
+            console.log(`🤖 Using AI model: ${modelType}`);
+            
+            const result = await generateResult(prompt, modelType);
 
             const aiMessage = {
                 message: result,
