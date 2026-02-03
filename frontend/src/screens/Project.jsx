@@ -1738,14 +1738,20 @@ const Project = () => {
                   }
 
                   if (hasPackageJson) {
+                    setTerminalOutput(prev => [...prev, `📦 Running npm install...`]);
                     const installProcess = await webContainer.spawn("npm", ["install"]);
                     installProcess.output.pipeTo(new WritableStream({
-                      write(chunk) { console.log("Install output:", chunk); }
+                      write(chunk) {
+                        const cleaned = chunk.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
+                        if (cleaned) {
+                           console.log("Install output:", cleaned);
+                           setTerminalOutput(prev => [...prev, cleaned]);
+                        }
+                      }
                     }));
 
-                    await new Promise((resolve) => {
-                      installProcess.on("exit", (code) => resolve(code));
-                    });
+                    await installProcess.exit;
+                    setTerminalOutput(prev => [...prev, `✅ Dependencies installed`]);
 
                     let runCommand = ["start"];
                     try {
@@ -1754,19 +1760,28 @@ const Project = () => {
                       else if (pkgJson.scripts?.start) runCommand = ["start"];
                     } catch (e) {}
 
+                    setTerminalOutput(prev => [...prev, `▶ Running application...`]);
                     let tempRunProcess = await webContainer.spawn("npm", runCommand);
                     tempRunProcess.output.pipeTo(new WritableStream({
-                      write(chunk) { console.log("App output:", chunk); }
+                      write(chunk) { 
+                        const cleaned = chunk.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
+                        if (cleaned) {
+                          console.log("App output:", cleaned);
+                          setTerminalOutput(prev => [...prev, cleaned]);
+                        }
+                      }
                     }));
 
                     setRunProcess(tempRunProcess);
 
                     webContainer.on("server-ready", (port, url) => {
+                      setTerminalOutput(prev => [...prev, `🌐 Server ready at ${url} (port ${port})`]);
                       setIframeUrl(url);
                       setIsRunning(false);
                     });
 
-                    tempRunProcess.on("exit", (code) => {
+                    tempRunProcess.exit.then((code) => {
+                      setTerminalOutput(prev => [...prev, `⏹ Process exited with code ${code}`]);
                       setIsRunning(false);
                       setRunProcess(null);
                     });
@@ -1793,7 +1808,7 @@ const Project = () => {
                           write(chunk) {
                             const cleaned = chunk.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
                             if (cleaned) {
-                              console.log("Install:", cleaned);
+                              setTerminalOutput(prev => [...prev, cleaned]);
                             }
                           }
                         }));
@@ -1819,7 +1834,8 @@ const Project = () => {
                         setIsRunning(false);
                       });
 
-                      tempRunProcess.exit.then(() => {
+                      tempRunProcess.exit.then((code) => {
+                        setTerminalOutput(prev => [...prev, `⏹ Process exited with code ${code}`]);
                         setIsRunning(false);
                         setRunProcess(null);
                       });
