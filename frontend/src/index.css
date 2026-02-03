@@ -12,6 +12,13 @@ html,
 body {
   height: 100%;
   width: 100%;
+  background-color: #000;
+  color: #fff;
+}
+
+#root {
+  background-color: #000;
+  min-height: 100%;
 }
 
 .message-box{
@@ -19,4 +26,28 @@ body {
 }
 .message-box::-webkit-scrollbar{
   display: none;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spinY {
+  from {
+    transform: rotateY(0deg);
+  }
+  to {
+    transform: rotateY(360deg);
+  }
+}
+
+.group:hover .spin-on-hover {
+  animation: spinY 1.5s linear infinite;
 }
