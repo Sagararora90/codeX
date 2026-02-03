@@ -1373,7 +1373,7 @@ const Project = () => {
             setIsChatOpen(!isChatOpen);
             setIsTeamChatOpen(false);
           }}
-          title="AI Agent"
+          title="codeX AI"
         >
           <i className="ri-robot-line text-xl"></i>
         </button>

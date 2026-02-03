@@ -1,4 +1,4 @@
-# Ai_agent 🤖
+# codeX 🤖
 
 A real-time, collaborative, AI-powered IDE built for modern development workflows. This project integrates cutting-edge technologies like **WebContainer API**, **Socket.io**, and **Generative AI** to provide a seamless coding experience directly in the browser.
 
@@ -45,7 +45,7 @@ Run your Node.js and static projects directly in the browser without any local s
 
 ---
 
-## 🚀 Getting Started
+## 🛠️ Getting Started
 
 ### Prerequisites
 - [Node.js](https://nodejs.org/) (v18+ recommended)
@@ -56,8 +56,8 @@ Run your Node.js and static projects directly in the browser without any local s
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/Sagararora90/Ai_agent.git
-   cd Ai_agent
+   git clone https://github.com/Sagararora90/codeX.git
+   cd codeX
    ```
 
 2. **Backend Setup**:

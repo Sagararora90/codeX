@@ -1,7 +1,7 @@
 {
-  "name": "backend",
+  "name": "codex-backend",
   "version": "1.0.0",
-  "description": "Backend for AI agent",
+  "description": "Backend for codeX",
   "main": "server.js",
   "type": "module",
   "scripts": {
