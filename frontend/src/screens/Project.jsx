@@ -951,7 +951,13 @@ const Project = () => {
         })
         .catch((err) => {
           console.error("❌ Error initializing web container:", err);
-          alert("Failed to initialize WebContainer. Please refresh the page.");
+          let errorMessage = "Failed to initialize WebContainer.";
+          
+          if (!window.crossOriginIsolated) {
+            errorMessage += "\n\nReason: Your browser is not cross-origin isolated. This is usually caused by missing security headers (COOP/COEP) or using an unsupported browser.";
+          }
+          
+          alert(errorMessage + "\n\nPlease check the console for more details and refresh the page.");
         });
     } else {
       console.log("WebContainer already initialized");
