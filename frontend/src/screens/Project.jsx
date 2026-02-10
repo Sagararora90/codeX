@@ -140,7 +140,7 @@ const Project = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [terminalOutput, setTerminalOutput] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
-  const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('aiModel') || 'groq');
+  const [aiModel, setAiModel] = useState(localStorage.getItem('aiModel') || 'groq');
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [editorFontSize, setEditorFontSize] = useState(() => parseInt(localStorage.getItem('editorFontSize')) || 14);
@@ -439,7 +439,7 @@ const Project = () => {
       message: messageToSend,
       sender: user,
       sessionId: targetSessionId,
-      modelType: selectedModel,
+      modelType: aiModel,
       timestamp: Date.now()
     };
 
@@ -1361,9 +1361,63 @@ const Project = () => {
       </div>
 
       {/* Main Content Area */}
-      <div className={`main flex h-screen w-screen overflow-hidden ${colors.text} ${colors.bg}`}>
-      {/* Activity Bar - Vertical Strip on the far left */}
-      <aside className={`w-12 ${colors.activityBar} flex flex-col items-center py-4 gap-4 z-30`}>
+      <div className={`main flex flex-col md:flex-row h-screen w-screen overflow-hidden relative ${colors.text} ${colors.bg}`}>
+          
+      {/* Mobile Overlays */}
+      {(isExplorerOpen || isChatOpen || isTeamChatOpen) && (
+          <div 
+              className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm"
+              onClick={() => {
+                  setIsExplorerOpen(false);
+                  setIsChatOpen(false);
+                  setIsTeamChatOpen(false);
+              }}
+          />
+      )}
+
+      {/* Mobile Header */}
+      <header className="md:hidden h-14 border-b border-[#333] flex items-center justify-between px-4 shrink-0 bg-[#1e1e1e] z-30">
+          <div className="flex items-center gap-3">
+              <button 
+                  onClick={() => setIsExplorerOpen(!isExplorerOpen)}
+                  className="p-2 -ml-2 text-gray-400 hover:text-white"
+              >
+                  <i className="ri-menu-2-line text-lg"></i>
+              </button>
+              <span className="font-bold text-sm truncate max-w-[150px]">{project?.name}</span>
+          </div>
+          <div className="flex items-center gap-3">
+              <button 
+                  onClick={() => setIsChatOpen(!isChatOpen)}
+                  className={`p-2 rounded-lg ${isChatOpen ? 'bg-white/10 text-white' : 'text-gray-400'}`}
+              >
+                  <i className="ri-robot-2-line text-lg"></i>
+              </button>
+              <button 
+                  onClick={() => {
+                      setIsTeamChatOpen(!isTeamChatOpen);
+                      setIsChatOpen(false);
+                      setIsExplorerOpen(false);
+                      if (!isTeamChatOpen) { // Opening
+                          setLastReadTeamChat(Date.now());
+                          localStorage.setItem(`lastReadTeamChat_${project?._id}`, Date.now());
+                      }
+                  }}
+                  className={`p-2 rounded-lg relative ${isTeamChatOpen ? 'bg-white/10 text-white' : 'text-gray-400'}`}
+              >
+                  <i className="ri-team-line text-lg"></i>
+                  {unreadTeamCount > 0 && !isTeamChatOpen && (
+                      <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-[#1e1e1e]"></span>
+                  )}
+              </button>
+              <button onClick={() => navigate('/dashboard')} className="p-2 text-gray-400">
+                  <i className="ri-home-4-line text-lg"></i>
+              </button>
+          </div>
+      </header>
+
+      {/* Activity Bar - Vertical Strip on the far left (Desktop Only) */}
+      <aside className={`w-12 ${colors.activityBar} hidden md:flex flex-col items-center py-4 gap-4 z-30`}>
         <button 
           className={`w-12 h-12 flex items-center justify-center ${colors.secondaryText} hover:text-white transition-colors border-l-2 border-transparent hover:bg-white/10`}
           onClick={() => navigate('/dashboard')}
@@ -1435,8 +1489,8 @@ const Project = () => {
       {/* Side Explorer Panel */}
       {isExplorerOpen && (
       <div 
-        className={`w-64 h-full ${colors.sidebar} border-r ${colors.border} relative flex flex-col z-20`}
-        style={{ width: explorerWidth }}
+        className={`w-64 h-full ${colors.sidebar} border-r ${colors.border} fixed md:relative flex flex-col z-50 md:z-20 shadow-2xl md:shadow-none transition-transform duration-300 left-0 top-0 bottom-0`}
+        style={{ width: window.innerWidth >= 768 ? explorerWidth : '16rem' }}
       >
         <header className={`p-3 border-b ${colors.border} flex justify-between items-center bg-black/5`}>
           <h2 className={`text-[11px] font-bold ${colors.headerText} uppercase tracking-wider`}>Explorer</h2>
@@ -2047,8 +2101,8 @@ const Project = () => {
       {/* AI Chat Panel - Right Side (Claude-style) */}
       {isChatOpen && (
         <div 
-          className="bg-[#1e1e1e] flex flex-col border-l border-[#333] relative"
-          style={{ width: chatWidth }}
+          className="bg-[#1e1e1e] flex flex-col border-l border-[#333] fixed md:relative z-50 md:z-auto right-0 top-0 bottom-0 shadow-2xl md:shadow-none"
+          style={{ width: window.innerWidth >= 768 ? chatWidth : '100%' }}
         >
           {/* Resize Handle */}
           <div 
@@ -2229,31 +2283,44 @@ const Project = () => {
                       >
                         <i className="ri-arrow-up-s-line text-sm"></i>
                         <i className={`${
-                          selectedModel === 'groq' ? 'ri-flashlight-fill text-purple-400' : 
-                          'ri-gemini-fill text-orange-400'
+                          aiModel === 'groq' || aiModel === 'groq-8b' ? 'ri-flashlight-fill text-purple-400' : 
+                          aiModel.startsWith('gemini') ? 'ri-gemini-fill text-orange-400' :
+                          'ri-brain-line text-blue-400'
                         } text-xs`}></i>
-                        <span>{selectedModel === 'groq' ? 'Groq' : 'Gemini'}</span>
+                        <span className="max-w-[80px] truncate">
+                          {aiModel === 'groq' ? 'Groq 70B' : 
+                           aiModel === 'deepseek-r1' ? 'DeepSeek R1' :
+                           aiModel === 'gemini-2-flash' ? 'Gemini 3 Flash' :
+                           aiModel.charAt(0).toUpperCase() + aiModel.slice(1)}
+                        </span>
                       </button>
 
                       {isModelDropdownOpen && (
-                        <div className={`absolute bottom-full left-0 mb-1 ${colors.sidebar} rounded border ${colors.border} overflow-hidden z-20 min-w-[100px]`}>
-                          {['groq', 'gemini'].map(model => (
+                        <div className={`absolute bottom-full left-0 mb-1 ${colors.sidebar} rounded border ${colors.border} overflow-hidden z-20 min-w-[160px] shadow-2xl`}>
+                          {[
+                            { id: 'groq', name: 'Groq OSS 70B', icon: 'ri-flashlight-fill', color: 'text-purple-400' },
+                            { id: 'deepseek-r1', name: 'DeepSeek R1', icon: 'ri-brain-line', color: 'text-blue-400' },
+                            { id: 'gemini-2-flash', name: 'Gemini 3 Flash', icon: 'ri-gemini-fill', color: 'text-orange-400' },
+                            { id: 'mistral', name: 'Mistral 7B', icon: 'ri-cpu-line', color: 'text-green-400' },
+                            { id: 'qwen-2.5', name: 'Qwen 2.5', icon: 'ri-robot-line', color: 'text-red-400' },
+                            { id: 'gemma-2', name: 'Gemma 2', icon: 'ri-google-fill', color: 'text-blue-500' }
+                          ].map(m => (
                             <button
-                              key={model}
+                              key={m.id}
                               onClick={() => { 
-                                setSelectedModel(model); 
+                                setAiModel(m.id); 
                                 setIsModelDropdownOpen(false); 
-                                localStorage.setItem('aiModel', model); 
+                                localStorage.setItem('aiModel', m.id); 
                               }}
-                              className={`w-full text-left px-3 py-1.5 text-[11px] flex items-center gap-2 ${
-                                selectedModel === model ? 'bg-[#0078d4] text-white' : `hover:${colors.menuHover} ${colors.text}`
+                              className={`w-full text-left px-3 py-2 text-[11px] flex items-center justify-between ${
+                                aiModel === m.id ? 'bg-[#0078d4] text-white' : `hover:${colors.menuHover} ${colors.text}`
                               }`}
                             >
-                              <i className={`${
-                                model === 'groq' ? 'ri-flashlight-fill text-purple-400' : 
-                                'ri-gemini-fill text-orange-400'
-                              } text-xs`}></i>
-                              {model.charAt(0).toUpperCase() + model.slice(1)}
+                              <div className="flex items-center gap-2">
+                                <i className={`${m.icon} ${aiModel === m.id ? 'text-white' : m.color} text-xs`}></i>
+                                <span>{m.name}</span>
+                              </div>
+                              {aiModel === m.id && <i className="ri-check-line"></i>}
                             </button>
                           ))}
                         </div>
@@ -2286,8 +2353,8 @@ const Project = () => {
       {/* Team Chat Panel */}
       {isTeamChatOpen && (
         <div 
-          className={`${colors.bg} flex flex-col border-l ${colors.border} relative`}
-          style={{ width: chatWidth }}
+          className={`${colors.bg} flex flex-col border-l ${colors.border} fixed md:relative z-50 md:z-auto right-0 top-0 bottom-0 shadow-2xl md:shadow-none`}
+          style={{ width: window.innerWidth >= 768 ? chatWidth : '100%' }}
         >
            {/* Resize Handle */}
            <div 

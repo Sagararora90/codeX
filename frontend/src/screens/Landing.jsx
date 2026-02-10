@@ -65,6 +65,12 @@ const Landing = () => {
     const hasAnimated = useRef(false);
 
     useEffect(() => {
+        // Redirect to dashboard if logged in and trying to access auth pages
+        const token = localStorage.getItem('token');
+        if (token && (location.pathname === '/login' || location.pathname === '/register')) {
+            navigate('/dashboard');
+        }
+
         if (location.pathname === '/login') setActiveView('login');
         else if (location.pathname === '/register') setActiveView('register');
         else setActiveView('landing');
@@ -206,7 +212,7 @@ const Landing = () => {
                                 <div className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e] border border-[#dea123]"></div>
                                 <div className="w-2.5 h-2.5 rounded-full bg-[#27c93f] border border-[#1aab29]"></div>
                             </div>
-                            <span className="text-[11px] font-semibold text-gray-500">codeX Editor - Active</span>
+                            <span className="text-[11px] font-semibold text-gray-500 hidden sm:inline">codeX Editor - Active</span>
                         </motion.div>
 
                         <motion.div 
@@ -222,11 +228,11 @@ const Landing = () => {
                                         <i className="ri-file-code-line text-blue-400"></i>
                                         <span>index.js</span>
                                     </div>
-                                    <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
+                                    <div className="hidden md:flex items-center gap-2 text-xs font-medium text-gray-500">
                                         <i className="ri-file-list-3-line text-gray-400"></i>
                                         <span>package.json</span>
                                     </div>
-                                    <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
+                                    <div className="hidden md:flex items-center gap-2 text-xs font-medium text-gray-500">
                                         <i className="ri-css3-line text-orange-400"></i>
                                         <span>styles.css</span>
                                     </div>
@@ -257,7 +263,7 @@ const Landing = () => {
 
                                 <motion.div 
                                     variants={{ hidden: { opacity: 0, x: -20 }, visible: { opacity: 1, x: 0, transition: { delay: 0.1 } } }}
-                                    className="w-48 bg-[#1e1e1e] border-r border-[#333] hidden md:flex flex-col p-3 text-left"
+                                    className="w-48 bg-[#1e1e1e] border-r border-[#333] hidden lg:flex flex-col p-3 text-left"
                                 >
                                     <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Explorer</div>
                                     <div className="space-y-3">
@@ -281,7 +287,7 @@ const Landing = () => {
 
                                 <motion.div 
                                     variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0, transition: { delay: 0.2 } } }}
-                                    className="flex-grow bg-[#1e1e1e] p-6 font-mono text-sm overflow-hidden relative text-left"
+                                    className="flex-grow bg-[#1e1e1e] p-3 md:p-6 font-mono text-sm overflow-x-auto relative text-left"
                                 >
                                     <div className="space-y-1.5 opacity-90 scale-95 origin-top-left">
                                         <div className="flex gap-4"><span className="text-gray-600 w-4">1</span> <span className="text-purple-400">import</span> React <span className="text-purple-400">from</span> <span className="text-green-400">'react'</span>;</div>
@@ -297,7 +303,7 @@ const Landing = () => {
                                         <div className="flex gap-4"><span className="text-gray-600 w-4">8</span> {'}'};</div>
                                     </div>
 
-                                    <div className="absolute bottom-4 left-6 right-6 h-20 bg-[#252526] rounded-lg border border-white/5 p-3 font-mono text-[10px] shadow-2xl overflow-hidden group/term hover:h-32 hover:bg-[#2d2d2d] hover:border-white/10 transition-all duration-500 ease-out cursor-pointer">
+                                    <div className="absolute bottom-4 left-2 right-2 md:left-6 md:right-6 h-20 bg-[#252526] rounded-lg border border-white/5 p-3 font-mono text-[10px] shadow-2xl overflow-hidden group/term hover:h-32 hover:bg-[#2d2d2d] hover:border-white/10 transition-all duration-500 ease-out cursor-pointer">
                                          <div className="flex items-center gap-4 text-gray-500 mb-2 border-b border-white/5 pb-1">
                                             <span className="text-white border-b border-white">Terminal</span>
                                             <span className="group-hover/term:text-gray-300 transition-colors">Console</span>

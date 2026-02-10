@@ -7,9 +7,25 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY || ""
 });
 
-// Initialize Gemini client (Model initialized later to use SYSTEM_INSTRUCTION)
+// Initialize Gemini client
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-let model;
+
+// Provider Configurations
+const MODELS = {
+  // Groq Models
+  'groq': { provider: 'groq', id: 'llama-3.3-70b-versatile' },
+  'groq-8b': { provider: 'groq', id: 'llama-3.1-8b-instant' },
+  
+  // Gemini Models
+  'gemini': { provider: 'gemini', id: 'gemini-1.5-flash' },
+  'gemini-2-flash': { provider: 'gemini', id: 'gemini-2.0-flash-exp' },
+  
+  // Hugging Face Models (Serverless Inference)
+  'deepseek-r1': { provider: 'hf', id: 'deepseek-ai/DeepSeek-R1-Distill-Llama-8B' },
+  'mistral': { provider: 'hf', id: 'mistralai/Mistral-7B-Instruct-v0.3' },
+  'qwen-2.5': { provider: 'hf', id: 'Qwen/Qwen2.5-7B-Instruct' },
+  'gemma-2': { provider: 'hf', id: 'google/gemma-2-9b-it' }
+};
 
 /* ================= ENHANCED SYSTEM INSTRUCTION ================= */
 
@@ -56,8 +72,127 @@ Think like a friend who actually solves the problem, not someone who gives templ
 OUTPUT ONLY VALID JSON - NO MARKDOWN, NO EXTRA TEXT.
 `;
 
-// Initialize Gemini model with system instruction
-model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp", systemInstruction: SYSTEM_INSTRUCTION });
+/* ================= PROVIDER LOGIC ================= */
+
+async function generateGroqResult(prompt, modelId) {
+    try {
+        const chatCompletion = await groq.chat.completions.create({
+            messages: [
+                { role: "system", content: SYSTEM_INSTRUCTION },
+                { role: "user", content: prompt }
+            ],
+            model: modelId,
+            response_format: { type: "json_object" }
+        });
+        return chatCompletion.choices[0].message.content;
+    } catch (error) {
+        console.error("Groq Error:", error);
+        throw error;
+    }
+}
+
+async function generateGeminiResult(prompt, modelId) {
+    try {
+        const model = genAI.getGenerativeModel({ model: modelId, systemInstruction: SYSTEM_INSTRUCTION });
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        return response.text();
+    } catch (error) {
+        console.error("Gemini Error:", error);
+        throw error;
+    }
+}
+
+async function generateHFResult(prompt, modelId) {
+    try {
+        const response = await fetch(`https://api-inference.huggingface.co/models/${modelId}`, {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${process.env.HF_TOKEN}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                inputs: `<|system|>\n${SYSTEM_INSTRUCTION}\n<|user|>\n${prompt}\n<|assistant|>`,
+                parameters: {
+                    max_new_tokens: 2048,
+                    return_full_text: false,
+                    temperature: 0.7
+                }
+            })
+        });
+
+        const data = await response.json();
+        
+        // HF typically returns an array or an object with generated_text
+        let content = Array.isArray(data) ? data[0]?.generated_text : data.generated_text;
+        
+        if (!content) {
+            console.error("HF Error Data:", data);
+            throw new Error(data.error || "Failed to get response from Hugging Face");
+        }
+
+        // Clean up JSON if model wraps it in markdown blocks
+        if (content.includes('```json')) {
+            content = content.split('```json')[1].split('```')[0].trim();
+        } else if (content.includes('```')) {
+            content = content.split('```')[1].split('```')[0].trim();
+        }
+
+        return content;
+    } catch (error) {
+        console.error("HF Error:", error);
+        throw error;
+    }
+}
+
+/* ================= MAIN EXPORT ================= */
+
+export const generateResult = async (prompt, modelType) => {
+    const config = MODELS[modelType] || MODELS['groq'];
+    console.log(`🚀 Routing to ${config.provider} (${config.id})`);
+
+    try {
+        switch (config.provider) {
+            case 'groq':
+                return await generateGroqResult(prompt, config.id);
+            case 'gemini':
+                return await generateGeminiResult(prompt, config.id);
+            case 'hf':
+                return await generateHFResult(prompt, config.id);
+            default:
+                throw new Error("Invalid provider");
+        }
+    } catch (error) {
+        const isRateLimit = error.status === 429 || error.message.includes('429') || error.message.includes('rate limit');
+        
+        console.error("Primary Error:", error.message);
+        
+        // Fallback to stable Groq if everything else fails
+        if (modelType !== 'groq') {
+            console.log("🔄 Falling back to stable Groq...");
+            try {
+                return await generateGroqResult(prompt, MODELS['groq'].id);
+            } catch (fallbackError) {
+                if (fallbackError.status === 429 || fallbackError.message.includes('429')) {
+                    return JSON.stringify({
+                        type: 'chat',
+                        message: "⚠️ All free models are currently rate-limited. Please try another model like Cursor or wait a few minutes before trying again."
+                    });
+                }
+                throw fallbackError;
+            }
+        }
+
+        if (isRateLimit) {
+            return JSON.stringify({
+                type: 'chat',
+                message: "⚠️ This model is currently rate-limited. Please try using another model (like Mistral, DeepSeek) or Cursor."
+            });
+        }
+
+        throw error;
+    }
+};
 
 /* ================= ENHANCED LANGUAGE DETECTION ================= */
 

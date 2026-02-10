@@ -14,6 +14,9 @@ const Home = () => {
     const [projectName, setProjectName] = useState('');
     const [projectDescription, setProjectDescription] = useState('');
     const [projectTechStack, setProjectTechStack] = useState('');
+
+    // Recent Updates View All State
+    const [showAllUpdates, setShowAllUpdates] = useState(false);
     
     // Rename/Menu States
     const [activeMenu, setActiveMenu] = useState(null); // stores project ID
@@ -174,33 +177,33 @@ const Home = () => {
     const THEMES = {
         dark: {
             bg: 'bg-black',
-            card: 'bg-[#1A1A1A]',
-            subCard: 'bg-[#0a0a0a]',
-            border: 'border-[#222]',
-            borderHover: 'hover:border-[#333]', // For card hover
+            card: 'bg-[#121212]/80 backdrop-blur-xl', // More glass-like
+            subCard: 'bg-white/5',
+            border: 'border-white/10',
+            borderHover: 'hover:border-white/20', 
             text: 'text-white',
             secondaryText: 'text-gray-400',
             button: 'bg-blue-600 text-white',
             buttonHover: 'hover:bg-blue-700',
-            sidebar: 'bg-[#141414] border-r border-[#222]',
-            header: 'border-b border-[#222] bg-[#141414]',
+            sidebar: 'bg-[#141414]/90 backdrop-blur-xl border-r border-[#222]',
+            header: 'border-b border-[#222] bg-[#141414]/80 backdrop-blur-md',
             navHover: 'hover:bg-white/10 hover:text-white hover:backdrop-blur-md hover:border-white/10 border border-transparent',
-            navActive: 'bg-white/10 text-white border-white/10 shadow-lg shadow-black/20'
+            navActive: 'bg-white/10 text-white border-white/10 shadow-lg shadow-black/20 backdrop-blur-md'
         },
         light: {
-            bg: 'bg-[#f8f9fa]',
-            card: 'bg-white',
-            subCard: 'bg-[#f1f3f5]',
-            border: 'border-[#e9ecef]',
-            borderHover: 'hover:border-[#dee2e6]',
+            bg: 'bg-[#f0f2f5]', // Slightly darker for better glass contrast
+            card: 'bg-white/70 backdrop-blur-xl shadow-sm',
+            subCard: 'bg-black/5',
+            border: 'border-white/40',
+            borderHover: 'hover:border-black/5',
             text: 'text-[#212529]',
             secondaryText: 'text-[#868e96]', 
             button: 'bg-[#212529] text-white',
             buttonHover: 'hover:bg-[#343a40]',
-            sidebar: 'bg-white border-r border-[#e9ecef]',
-            header: 'border-b border-[#e9ecef] bg-white',
+            sidebar: 'bg-white/80 backdrop-blur-xl border-r border-[#e9ecef]',
+            header: 'border-b border-[#e9ecef] bg-white/80 backdrop-blur-md',
             navHover: 'hover:bg-[#212529]/5 hover:text-[#212529] hover:backdrop-blur-md hover:border-[#212529]/10 border border-transparent',
-            navActive: 'bg-[#212529]/10 text-[#212529] border-[#212529]/10 shadow-lg shadow-black/5'
+            navActive: 'bg-[#212529]/10 text-[#212529] border-[#212529]/10 shadow-lg shadow-black/5 backdrop-blur-md'
         }
     };
 
@@ -384,17 +387,44 @@ const Home = () => {
 
     // Calculate stats
     const totalProjects = project.length;
-    const totalCollaborators = project.reduce((acc, curr) => acc + (curr.users?.length || 0), 0);
+    // Calculate account age or start date
+    // Use user.createdAt if available, fallback to current date to avoid N/A during dev/stale state
+    const memberSinceDate = user?.createdAt ? new Date(user.createdAt) : new Date();
+    const memberSince = memberSinceDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    
+    // Debug user object to see why createdAt might be missing
+    // console.log('Home Render - User:', user);
+
     const pendingInvites = invitations.length;
 
+    // Mobile Sidebar State
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    
+    // Graph Tooltip State
+    const [graphTooltip, setGraphTooltip] = useState(null);
+
+    // ... (existing state) ...
+
     return (
-        <main className={`w-full h-screen flex ${colors.bg}`}>
+        <main className={`w-full h-screen flex ${colors.bg} overflow-hidden relative`}>
             
+            {/* Mobile Overlay */}
+            {isSidebarOpen && (
+                <div 
+                    className="fixed inset-0 bg-black/50 z-30 md:hidden backdrop-blur-sm"
+                    onClick={() => setIsSidebarOpen(false)}
+                />
+            )}
+
             {/* Sidebar */}
             <div 
-                className={`w-72 ${colors.sidebar} flex flex-col transition-colors duration-300 z-20`}
+                className={`
+                    fixed md:static inset-y-0 left-0 z-40
+                    w-72 ${colors.sidebar} flex flex-col transition-transform duration-300
+                    ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+                `}
             >
-                <div className="p-4">
+                <div className="p-4 flex justify-between items-center">
                     <div 
                         className="flex items-center gap-1.5 px-1 cursor-pointer" 
                         onClick={() => navigate('/dashboard')}
@@ -404,6 +434,13 @@ const Home = () => {
                          </div>
                          <span className={`font-black text-lg tracking-wide ${colors.text}`}>codeX</span>
                     </div>
+                    {/* Close button for mobile */}
+                    <button 
+                        onClick={() => setIsSidebarOpen(false)}
+                        className="md:hidden p-2 text-gray-400 hover:text-white"
+                    >
+                        <i className="ri-close-line text-xl"></i>
+                    </button>
                 </div>
 
                 <div className="px-4 space-y-2 flex-grow">
@@ -414,7 +451,10 @@ const Home = () => {
                     ].map((tab) => (
                         <button 
                             key={tab.id}
-                            onClick={() => handleTabChange(tab.id)}
+                            onClick={() => {
+                                handleTabChange(tab.id);
+                                setIsSidebarOpen(false); // Close on selection (mobile)
+                            }}
                             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all border ${
                                 activeTab === tab.id || (tab.id === 'projects' && activeTab === 'project')
                                     ? colors.navActive 
@@ -453,16 +493,26 @@ const Home = () => {
             </div>
 
             {/* Main Content */}
-            <div className="flex-grow flex flex-col h-screen overflow-hidden">
+            <div className="flex-grow flex flex-col h-screen overflow-hidden w-full relative">
                 {/* Header */}
                 <header 
-                    className={`flex justify-between items-center px-10 py-6 ${colors.header} z-10`}
+                    className={`flex justify-between items-center px-4 md:px-10 py-4 md:py-6 ${colors.header} z-10 shrink-0`}
                 >
-                    <h2 className={`text-xl font-semibold ${colors.text}`}>
-                        {activeTab === 'dashboard' ? 'Overview' : 'Projects'}
-                    </h2>
+                    <div className="flex items-center gap-4">
+                        {/* Mobile Menu Button */}
+                        <button 
+                            onClick={() => setIsSidebarOpen(true)}
+                            className={`md:hidden p-2 rounded-lg ${colors.subCard} border ${colors.border} ${colors.text}`}
+                        >
+                            <i className="ri-menu-2-line text-lg"></i>
+                        </button>
+
+                        <h2 className={`text-xl font-semibold ${colors.text}`}>
+                            {activeTab === 'dashboard' ? 'Overview' : 'Projects'}
+                        </h2>
+                    </div>
                     
-                    <div className='flex items-center gap-5'>
+                    <div className='flex items-center gap-3 md:gap-5'>
                          {/* Search - Only show in Projects tab */}
                         {activeTab === 'projects' && (
                             <div className="relative group hidden md:block">
@@ -530,36 +580,40 @@ const Home = () => {
                 </header>
 
                 {/* Dashboard Content */}
-                <div className="flex-grow overflow-y-auto p-10">
+                <div className="flex-grow overflow-y-auto p-4 md:p-10">
                     
                                     {/* Stats - Only show in Dashboard tab */}
+                                    {/* Stats - Optimized Mobile Grid */}
                         {activeTab === 'dashboard' && (
                             <div 
-                                className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12"
+                                className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-8 md:mb-12"
                             >
-                                <div className={`${colors.card} p-6 rounded-2xl border ${colors.border} ${colors.borderHover} transition-all group`}>
-                                    <div className="flex justify-between items-start mb-4">
-                                        <div className={`p-2 ${colors.subCard} rounded-lg ${colors.text} ${appTheme === 'dark' ? 'group-hover:bg-white group-hover:text-black' : 'group-hover:bg-gray-900 group-hover:text-white'} transition-colors`}><i className="ri-folder-fill"></i></div>
+                                <div className={`${colors.card} p-5 md:p-6 rounded-3xl border ${colors.border} ${colors.borderHover} transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-blue-500/10 group col-span-1 relative overflow-hidden`}>
+                                    <div className={`absolute top-0 right-0 p-20 bg-blue-500/5 rounded-full blur-3xl -mr-10 -mt-10 transition-all group-hover:bg-blue-500/10`}></div>
+                                    <div className="flex justify-between items-start mb-3 md:mb-4 relative">
+                                        <div className={`p-2.5 ${colors.subCard} rounded-2xl ${colors.text} ${appTheme === 'dark' ? 'group-hover:bg-white group-hover:text-black' : 'group-hover:bg-gray-900 group-hover:text-white'} transition-colors shadow-sm`}><i className="ri-folder-fill text-lg"></i></div>
                                     </div>
-                                    <h3 className={`text-2xl font-bold ${colors.text} mb-1`}>{totalProjects}</h3>
-                                    <p className="text-sm text-gray-500">Active Projects</p>
+                                    <h3 className={`text-2xl md:text-3xl font-bold ${colors.text} mb-1 tracking-tight relative`}>{totalProjects}</h3>
+                                    <p className="text-xs md:text-sm text-gray-500 font-medium relative">Active Projects</p>
                                 </div>
 
-                                <div className={`${colors.card} p-6 rounded-2xl border ${colors.border} ${colors.borderHover} transition-all group`}>
-                                    <div className="flex justify-between items-start mb-4">
-                                        <div className={`p-2 ${colors.subCard} rounded-lg ${colors.text} ${appTheme === 'dark' ? 'group-hover:bg-white group-hover:text-black' : 'group-hover:bg-gray-900 group-hover:text-white'} transition-colors`}><i className="ri-user-smile-fill"></i></div>
+                                <div className={`${colors.card} p-5 md:p-6 rounded-3xl border ${colors.border} ${colors.borderHover} transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-purple-500/10 group col-span-1 relative overflow-hidden`}>
+                                    <div className={`absolute top-0 right-0 p-20 bg-purple-500/5 rounded-full blur-3xl -mr-10 -mt-10 transition-all group-hover:bg-purple-500/10`}></div>
+                                    <div className="flex justify-between items-start mb-3 md:mb-4 relative">
+                                        <div className={`p-2.5 ${colors.subCard} rounded-2xl ${colors.text} ${appTheme === 'dark' ? 'group-hover:bg-white group-hover:text-black' : 'group-hover:bg-gray-900 group-hover:text-white'} transition-colors shadow-sm`}><i className="ri-calendar-2-fill text-lg"></i></div>
                                     </div>
-                                    <h3 className={`text-2xl font-bold ${colors.text} mb-1`}>{totalCollaborators}</h3>
-                                    <p className="text-sm text-gray-500">Total Collaborators</p>
+                                    <h3 className={`text-2xl md:text-3xl font-bold ${colors.text} mb-1 tracking-tight relative`}>{memberSince}</h3>
+                                    <p className="text-xs md:text-sm text-gray-500 font-medium relative">Member Since</p>
                                 </div>
 
-                                <div className={`${colors.card} p-6 rounded-2xl border ${colors.border} ${colors.borderHover} transition-all group`}>
-                                    <div className="flex justify-between items-start mb-4">
-                                        <div className={`p-2 ${colors.subCard} rounded-lg ${colors.text} ${appTheme === 'dark' ? 'group-hover:bg-white group-hover:text-black' : 'group-hover:bg-gray-900 group-hover:text-white'} transition-colors`}><i className="ri-mail-send-fill"></i></div>
-                                        {pendingInvites > 0 && <span className="text-xs font-medium text-blue-500 bg-blue-500/10 px-2 py-1 rounded">Action Needed</span>}
+                                <div className={`${colors.card} p-5 md:p-6 rounded-3xl border ${colors.border} ${colors.borderHover} transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-green-500/10 group col-span-2 md:col-span-1 relative overflow-hidden`}>
+                                    <div className={`absolute top-0 right-0 p-20 bg-green-500/5 rounded-full blur-3xl -mr-10 -mt-10 transition-all group-hover:bg-green-500/10`}></div>
+                                    <div className="flex justify-between items-start mb-3 md:mb-4 relative">
+                                        <div className={`p-2.5 ${colors.subCard} rounded-2xl ${colors.text} ${appTheme === 'dark' ? 'group-hover:bg-white group-hover:text-black' : 'group-hover:bg-gray-900 group-hover:text-white'} transition-colors shadow-sm`}><i className="ri-mail-send-fill text-lg"></i></div>
+                                        {pendingInvites > 0 && <span className="text-[10px] md:text-xs font-bold text-blue-500 bg-blue-500/10 px-2.5 py-1 rounded-full border border-blue-500/20">Action Needed</span>}
                                     </div>
-                                    <h3 className={`text-2xl font-bold ${colors.text} mb-1`}>{pendingInvites}</h3>
-                                    <p className="text-sm text-gray-500">Pending Invites</p>
+                                    <h3 className={`text-2xl md:text-3xl font-bold ${colors.text} mb-1 tracking-tight relative`}>{pendingInvites}</h3>
+                                    <p className="text-xs md:text-sm text-gray-500 font-medium relative">Pending Invites</p>
                                 </div>
                             </div>
                         )}
@@ -567,12 +621,12 @@ const Home = () => {
                     {/* Activity Graph Section */}
                     {activeTab === 'dashboard' && (
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
-                            <div className={`${colors.card} p-6 rounded-2xl border ${colors.border} ${colors.borderHover} transition-all`}>
+                            <div className={`${colors.card} p-4 md:p-6 rounded-3xl border ${colors.border} ${colors.borderHover} transition-all`}>
                                 <div className="flex justify-between items-center mb-6">
                                     <h3 className={`text-lg font-bold ${colors.text}`}>Project Activity</h3>
-                                    <span className="text-xs text-gray-500">Last 7 Days</span>
+                                    <span className="text-xs text-gray-500 bg-white/5 px-2 py-1 rounded-lg border border-white/5">Last 7 Days</span>
                                 </div>
-                                <div className="h-64 relative w-full">
+                                <div className="h-48 md:h-64 relative w-full">
                                     {/* Grid Lines */}
                                     <div className="absolute inset-0 flex flex-col justify-between text-[10px] text-gray-600 mb-6">
                                         {[4, 3, 2, 1, 0].map(val => (
@@ -610,73 +664,161 @@ const Home = () => {
                                             chartData.push({ day: dayName, count });
                                         }
                                         
-                                        const maxCount = Math.max(...chartData.map(d => d.count), 5); // Minimum scale
+                                        // Calculate Max for Y-Axis (Fixed scale 0-4 for small numbers, or dynamic if larger)
+                                        const maxCount = Math.max(...chartData.map(d => d.count), 4); 
                                         
-                                        // Generate SVG path commands
-                                        const width = 100;
-                                        const height = 100;
-                                        const stepX = width / (chartData.length - 1);
-                                        
-                                        // Create points for the line
-                                        const points = chartData.map((d, i) => {
-                                            const x = i * stepX;
-                                            // Invert Y axis (SVG 0 is top), leave space at bottom for labels
-                                            const y = height - ((d.count / maxCount) * 80); 
-                                            return `${x},${y}`;
-                                        }).join(' ');
+                                        // Helper to generate Monotone X spline path
+                                        const getPath = (points, isClosed = false) => {
+                                            if (points.length < 2) return "";
 
-                                        // Create area path (closed loop)
-                                        const areaPath = `M0,100 ${points.split(' ').map((p, i) => `L${p}`).join(' ')} L100,100 Z`;
-                                        // Create line path (open)
-                                        const linePath = `M${points.split(' ').map((p, i) => (i===0 ? p : `L${p}`)).join(' ')}`;
+                                            const dp = points.map((d, i) => ({
+                                                x: i * (100 / (points.length - 1)),
+                                                y: 100 - (d.count * (100 / maxCount))
+                                            }));
+
+                                            const k = dp.length;
+                                            
+                                            // Calculate tangents (m)
+                                            const m = new Array(k).fill(0);
+                                            const delta = new Array(k - 1).fill(0);
+
+                                            for (let i = 0; i < k - 1; i++) {
+                                                delta[i] = (dp[i+1].y - dp[i].y) / (dp[i+1].x - dp[i].x);
+                                            }
+
+                                            for (let i = 0; i < k - 1; i++) {
+                                                if (i === 0) {
+                                                    m[i] = delta[i];
+                                                } else {
+                                                    m[i] = (delta[i-1] + delta[i]) / 2;
+                                                }
+                                            }
+                                            m[k-1] = delta[k-2];
+
+                                            // Fix tangents for horizontal segments (monotonicity)
+                                            for (let i = 0; i < k - 1; i++) {
+                                                if (delta[i] === 0) {
+                                                    m[i] = 0;
+                                                    m[i+1] = 0;
+                                                }
+                                            }
+
+                                            // Alpha/Beta Check
+                                            for (let i = 0; i < k - 1; i++) {
+                                                if (delta[i] === 0) continue;
+                                                const alpha = m[i] / delta[i];
+                                                const beta = m[i+1] / delta[i];
+                                                const tau = 3;
+                                                if (alpha < 0 || beta < 0) {
+                                                    // Should not happen for monotone but good safety
+                                                }
+                                                if (alpha * alpha + beta * beta > 9) {
+                                                     const t = tau / Math.sqrt(alpha * alpha + beta * beta);
+                                                     m[i] = t * alpha * delta[i];
+                                                     m[i+1] = t * beta * delta[i];
+                                                }
+                                            }
+
+                                            let path = `M ${dp[0].x},${dp[0].y}`;
+
+                                            for (let i = 0; i < k - 1; i++) {
+                                                const p0 = dp[i];
+                                                const p1 = dp[i+1];
+                                                const lenX = p1.x - p0.x;
+                                                
+                                                const cp1x = p0.x + lenX / 3;
+                                                const cp1y = p0.y + (m[i] * lenX) / 3;
+                                                
+                                                const cp2x = p1.x - lenX / 3;
+                                                const cp2y = p1.y - (m[i+1] * lenX) / 3;
+
+                                                path += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p1.x},${p1.y}`;
+                                            }
+
+                                            if (isClosed) {
+                                                path += ` L 100,100 L 0,100 Z`;
+                                            }
+
+                                            return path;
+                                        };
+
+                                        const areaPath = getPath(chartData, true);
+                                        const linePath = getPath(chartData, false);
 
                                         return (
                                             <>
-                                            <div className="absolute inset-0 top-2 left-4 right-0 bottom-6">
+                                            <div className="absolute inset-0 top-2 left-4 right-0 bottom-6" onMouseLeave={() => setGraphTooltip(null)}>
+                                                {/* SVG Lines Only */}
                                                 <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
                                                     <defs>
                                                         <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                                                            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.4" />
-                                                            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+                                                            <stop offset="0%" stopColor="#10b981" stopOpacity="0.2" />
+                                                            <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
                                                         </linearGradient>
                                                     </defs>
                                                     
                                                     {/* Area Fill */}
-                                                    <path d={areaPath} fill="url(#chartGradient)" />
+                                                    <path d={areaPath} fill="url(#chartGradient)" className="transition-opacity duration-300 opacity-70" />
                                                     
                                                     {/* Stroke Line */}
-                                                    <path d={linePath} fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-                                                    
-                                                    {/* Data Circles */}
-                                                    {chartData.map((d, i) => {
-                                                        const x = i * stepX;
-                                                        const y = height - ((d.count / maxCount) * 80);
-                                                        return (
-                                                            <g key={i} className="group cursor-pointer">
-                                                                <circle 
-                                                                    cx={x} 
-                                                                    cy={y} 
-                                                                    r="2" 
-                                                                    fill="#141414" 
-                                                                    stroke="#3b82f6" 
-                                                                    strokeWidth="2"
-                                                                    vectorEffect="non-scaling-stroke"
-                                                                    className="group-hover:r-3 transition-all"
-                                                                />
-                                                                {/* Tooltip */}
-                                                                <foreignObject x={x - 10} y={y - 15} width="20" height="20" className="overflow-visible pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                    <div className="bg-[#222] text-white text-[10px] px-2 py-1 rounded whitespace-nowrap -mt-6 -ml-4 border border-[#333]">
-                                                                        {d.count} Updates
-                                                                    </div>
-                                                                </foreignObject>
-                                                            </g>
-                                                        )
-                                                    })}
+                                                    <path d={linePath} fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
                                                 </svg>
+
+                                                {/* HTML Overlay for Dots & Interactivity (Respects Aspect Ratio) */}
+                                                {chartData.map((d, i) => {
+                                                    const x = i * (100 / (chartData.length - 1));
+                                                    const y = 100 - (d.count * (100 / maxCount));
+                                                    const isHovered = graphTooltip && graphTooltip.day === d.day;
+                                                    
+                                                    return (
+                                                        <div 
+                                                            key={i}
+                                                            className="absolute group"
+                                                            style={{ 
+                                                                left: `${x}%`, 
+                                                                top: `${y}%`,
+                                                                transform: 'translate(-50%, -50%)' // Center the dot on the coordinate
+                                                            }}
+                                                            onMouseEnter={() => setGraphTooltip({ x, y, count: d.count, day: d.day })}
+                                                            onMouseLeave={() => setGraphTooltip(null)}
+                                                        >
+                                                            {/* Invisible Hit Area */}
+                                                            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-24 bg-transparent cursor-pointer" />
+                                                            
+                                                            {/* Visible HTML Dot - Always Circular */}
+                                                            <div 
+                                                                className={`
+                                                                    w-2.5 h-2.5 rounded-full border-[2.5px] cursor-pointer transition-all duration-200 ease-out z-10
+                                                                    ${isHovered 
+                                                                        ? 'w-3.5 h-3.5 bg-white border-[#10b981] shadow-[0_0_0_3px_rgba(16,185,129,0.2)]' 
+                                                                        : 'bg-[#1e1e1e] border-[#10b981]'}
+                                                                `}
+                                                            />
+                                                        </div>
+                                                    )
+                                                })}
+
+                                                {/* Tooltip */}
+                                                {graphTooltip && (
+                                                    <div 
+                                                        className="absolute pointer-events-none z-50 flex flex-col items-center"
+                                                        style={{ 
+                                                            left: `${graphTooltip.x}%`, 
+                                                            top: `${graphTooltip.y}%`,
+                                                            transform: 'translate(-50%, -100%) translateY(-12px)'
+                                                        }}
+                                                    >
+                                                        <div className="bg-[#1e1e1e] border border-white/10 rounded-lg shadow-xl px-3 py-2 min-w-[80px] text-center transform transition-all duration-200 ease-out scale-100 opacity-100">
+                                                            <div className="text-[10px] text-gray-400 font-medium uppercase tracking-wider mb-0.5">{graphTooltip.day}</div>
+                                                            <div className="text-sm font-bold text-white leading-none pb-0.5">{graphTooltip.count} <span className="text-[10px] font-normal text-gray-400">updates</span></div>
+                                                            <div className="absolute left-1/2 -translate-x-1/2 bottom-[-5px] w-2.5 h-2.5 bg-[#1e1e1e] border-r border-b border-white/10 rotate-45"></div>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                             
                                             {/* X-Axis Labels */}
-                                            <div className="absolute bottom-0 left-4 right-0 flex justify-between text-[10px] text-gray-500">
+                                            <div className="absolute bottom-0 left-4 right-0 flex justify-between text-[10px] text-gray-500 font-medium select-none">
                                                 {chartData.map((d, i) => (
                                                     <span key={i} className="w-4 text-center">{d.day}</span>
                                                 ))}
@@ -687,31 +829,52 @@ const Home = () => {
                                 </div>
                             </div>
 
-                             <div className={`${colors.card} p-6 rounded-2xl border ${colors.border} ${colors.borderHover} transition-all`}>
+                            <div className={`${colors.card} p-5 md:p-6 rounded-3xl border ${colors.border} ${colors.borderHover} transition-all flex flex-col`}>
                                 <div className="flex justify-between items-center mb-6">
                                     <h3 className={`text-lg font-bold ${colors.text}`}>Recent Updates</h3>
+                                    <button 
+                                        onClick={() => setShowAllUpdates(!showAllUpdates)}
+                                        className={`text-xs ${colors.button} px-3 py-1.5 rounded-full hover:opacity-90 transition-opacity`}
+                                    >
+                                        {showAllUpdates ? 'Show Less' : 'View All'}
+                                    </button>
                                 </div>
-                                <div className="space-y-4">
-                                    {[...project].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)).slice(0, 4).map((p, i) => (
-                                        <div 
-                                            key={p._id} 
-                                            onClick={() => navigate(`/project?id=${p._id}`, { state: { info: p } })}
-                                            className={`flex items-center gap-3 p-3 rounded-xl ${colors.subCard} border ${colors.border} ${colors.borderHover} transition-colors cursor-pointer group`}
-                                        >
-                                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center text-white/80 group-hover:text-white border border-white/5 transition-colors">
-                                                 <i className="ri-code-s-slash-line text-lg"></i>
+                                
+                                <div className="space-y-3 overflow-y-auto custom-scrollbar flex-grow pr-1" style={{ maxHeight: showAllUpdates ? '600px' : '300px', transition: 'max-height 0.3s ease-in-out' }}>
+                                    {project.flatMap(p => 
+                                        p.users && p.users.length > 0 ? p.users.map(u => ({
+                                            ...u, 
+                                            project: p.name, 
+                                            action: 'contributed to', 
+                                            time: p.updatedAt,
+                                            projectId: p._id
+                                        })) : []
+                                    )
+                                    .sort((a, b) => new Date(b.time) - new Date(a.time))
+                                    .slice(0, showAllUpdates ? 50 : 10)
+                                    .map((update, i) => (
+                                        <div key={i} className={`p-3 rounded-2xl ${colors.subCard} border ${colors.border} hover:bg-white/5 transition-all flex items-center gap-3 group cursor-default`}>
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600 text-white font-bold text-sm shadow-lg shadow-blue-500/20`}>
+                                                {update.email ? update.email[0].toUpperCase() : 'U'}
                                             </div>
-                                            <div className="flex-grow">
-                                                <p className={`text-sm ${colors.text} font-medium line-clamp-1`}>{p.name}</p>
-                                                <p className="text-xs text-gray-500">Updated {formatTimeAgo(p.updatedAt)}</p>
+                                            <div className="flex-1 min-w-0">
+                                                <p className={`text-sm ${colors.text} font-medium truncate`}>
+                                                    <span className={`${appTheme === 'dark' ? 'text-white' : 'text-black'}`}>{update.email ? update.email.split('@')[0] : 'Unknown User'}</span>
+                                                    <span className="text-gray-500 font-normal ml-1">pushed to</span>
+                                                </p>
+                                                <div className="flex items-center gap-1.5 mt-0.5">
+                                                    <i className="ri-git-branch-line text-xs text-blue-400"></i>
+                                                    <p className={`text-xs ${colors.secondaryText} truncate group-hover:text-blue-400 transition-colors`}>{update.project}</p>
+                                                </div>
                                             </div>
-                                            <div className={`text-right text-xs ${colors.subCard} px-2 py-1 rounded ${colors.secondaryText} border ${colors.border}`}>
-                                                {p.users.length} <i className="ri-user-line ml-1"></i>
-                                            </div>
+                                            <span className="text-[10px] text-gray-500 font-medium whitespace-nowrap bg-black/20 px-2 py-1 rounded-full">{formatTimeAgo(update.time)}</span>
                                         </div>
                                     ))}
+
                                     {project.length === 0 && (
-                                        <p className="text-center text-gray-500 text-sm py-4">No recent activity</p>
+                                        <div className="text-center py-10 text-gray-500">
+                                            <p>No recent activity</p>
+                                        </div>
                                     )}
                                 </div>
                             </div>
@@ -722,138 +885,142 @@ const Home = () => {
                     {activeTab === 'projects' && (
                         <>
                             {/* Section Header */}
-                            <div className="flex justify-between items-center mb-6">
-                                <h3 className={`text-lg font-semibold ${colors.text}`}>All Projects</h3>
-                                <div className="flex gap-2">
+                            <div className="flex justify-between items-center mb-8">
+                                <div className="flex items-center gap-4">
+                                    <h3 className={`text-2xl font-bold ${colors.text} tracking-tight`}>All Projects</h3>
+                                    <span className={`text-xs font-bold px-2 py-1 rounded-md ${colors.subCard} ${colors.secondaryText} border ${colors.border}`}>{project.length}</span>
+                                </div>
+                                <div className="flex gap-3">
                                     <button 
-                                        onClick={() => setIsGridView(true)}
-                                        className={`p-2 rounded-lg transition-colors ${isGridView ? `${colors.card} border ${colors.border} ${colors.text}` : `bg-transparent ${colors.secondaryText} ${appTheme === 'dark' ? 'hover:text-white' : 'hover:text-gray-900'}`}`}
+                                        onClick={() => setIsModalOpen(true)}
+                                        className={`px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold shadow-lg shadow-blue-500/20 hover:bg-blue-500 hover:shadow-blue-500/40 hover:-translate-y-0.5 transition-all duration-300 flex items-center gap-2`}
                                     >
-                                        <i className="ri-layout-grid-fill"></i>
+                                        <i className="ri-add-line text-lg"></i>
+                                        <span className="hidden sm:inline">New Project</span>
                                     </button>
-                                    <button 
-                                        onClick={() => setIsGridView(false)}
-                                        className={`p-2 rounded-lg transition-colors ${!isGridView ? `${colors.card} border ${colors.border} ${colors.text}` : `bg-transparent ${colors.secondaryText} ${appTheme === 'dark' ? 'hover:text-white' : 'hover:text-gray-900'}`}`}
-                                    >
-                                        <i className="ri-list-check"></i>
-                                    </button>
+                                    <div className={`p-1 rounded-xl ${colors.subCard} border ${colors.border} flex items-center gap-1`}>
+                                        <button 
+                                            onClick={() => setIsGridView(true)}
+                                            className={`p-2 rounded-lg transition-all duration-300 ${isGridView ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
+                                        >
+                                            <i className="ri-layout-grid-fill"></i>
+                                        </button>
+                                        <button 
+                                            onClick={() => setIsGridView(false)}
+                                            className={`p-2 rounded-lg transition-all duration-300 ${!isGridView ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
+                                        >
+                                            <i className="ri-list-check"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 
                             {/* Projects Grid */}
-                            <div className={`${isGridView ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6' : 'flex flex-col gap-4'}`}>
+                            <div className={`${isGridView ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4' : 'flex flex-col gap-3'}`}>
                                 
-                                {/* New Project Card */}
-                                <button 
-                                    onClick={() => setIsModalOpen(true)}
-                                    className={`${colors.card} border border-dashed ${colors.border} rounded-2xl p-6 flex items-center justify-center ${appTheme === 'dark' ? 'hover:border-white hover:bg-[#1A1A1A]' : 'hover:border-gray-400 hover:bg-gray-50'} transition-all group ${isGridView ? 'flex-col gap-4 h-[240px]' : 'h-24 justify-start gap-6'}`}
-                                >
-                                    <div className={`${colors.subCard} rounded-full flex items-center justify-center ${colors.text} group-hover:scale-110 transition-transform shadow-lg ${appTheme === 'dark' ? 'shadow-black/50' : 'shadow-gray-200'} ${isGridView ? 'w-14 h-14 text-2xl' : 'w-10 h-10 text-xl'}`}>
-                                        <i className="ri-add-line"></i>
-                                    </div>
-                                    <p className={`font-medium ${colors.secondaryText} ${appTheme === 'dark' ? 'group-hover:text-white' : 'group-hover:text-gray-900'} transition-colors`}>Create New Project</p>
-                                </button>
-
                                 {/* Project List */}
                                 {filteredProjects.map((project, index) => (
                                     <div 
                                         key={project._id}
                                         onClick={() => navigate(`/project?id=${project._id}`, { state: { project } })}
-                                        className={`${colors.subCard} backdrop-blur-3xl p-6 rounded-2xl border ${colors.border} ${colors.borderHover} hover:shadow-2xl ${appTheme === 'dark' ? 'hover:shadow-purple-500/10' : 'hover:shadow-gray-200'} hover:-translate-y-1 transition-all duration-300 cursor-pointer group ${isGridView ? 'h-[240px] flex flex-col justify-between' : 'h-24 flex items-center justify-between'}`}
+                                        className={`${colors.subCard} backdrop-blur-md rounded-3xl border ${colors.border} ${colors.borderHover} hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 cursor-pointer group relative overflow-hidden ${isGridView ? 'aspect-square flex flex-col p-5' : 'h-20 flex items-center px-6 gap-6'}`}
                                     >
-                                        <div className={`flex items-start ${isGridView ? 'justify-between w-full' : 'gap-4'}`}>
-                                            <div className={`rounded-xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center text-white border border-white/10 ${isGridView ? 'w-12 h-12 text-xl' : 'w-10 h-10'}`}>
-                                                <i className="ri-code-s-slash-line"></i>
-                                            </div>
-                                            
-                                            {isGridView ? (
-                                                <div className="relative">
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setActiveMenu(activeMenu === project._id ? null : project._id);
-                                                        }}
-                                                        className="text-gray-400 hover:text-white transition-colors p-2 rounded-full hover:bg-white/10"
-                                                    >
-                                                        <i className="ri-more-2-fill text-lg"></i>
-                                                    </button>
-                                                    
-                                                    {activeMenu === project._id && (
-                                                        <div className="absolute right-0 top-10 bg-[#1c1c1c]/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl z-20 w-40 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                                                            <button 
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setEditingProject(project);
-                                                                    setNewName(project.name);
-                                                                    setIsRenameModalOpen(true);
-                                                                    setActiveMenu(null);
-                                                                }}
-                                                                className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center gap-2 transition-colors"
-                                                            >
-                                                                <i className="ri-pencil-line"></i> Rename
-                                                            </button>
-                                                            <button 
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleDeleteProject(project._id);
-                                                                }}
-                                                                className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center gap-2 transition-colors"
-                                                            >
-                                                                <i className="ri-delete-bin-line"></i> Delete
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="flex-grow">
-                                                    <h3 className={`text-lg font-bold ${colors.text} mb-0 group-hover:text-blue-400 transition-colors`}>{project.name}</h3>
-                                                    <p className="text-xs text-gray-400 line-clamp-1">
-                                                        {formatTimeAgo(project.updatedAt)}
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
-                                        
+                                        {/* Grid View Content */}
                                         {isGridView && (
-                                            <div>
-                                                <h3 className={`text-lg font-bold ${colors.text} mb-2 line-clamp-1 group-hover:text-blue-400 transition-colors tracking-tight`}>{project.name}</h3>
-                                                <div className="flex items-center gap-2 text-xs text-gray-400 mb-4 overflow-x-auto scrollbar-hide">
-                                                    {(project.techStack || []).map((tech, i) => (
-                                                        <span key={i} className={`px-2.5 py-1 rounded-md ${colors.subCard} border ${colors.border} whitespace-nowrap ${colors.text}`}>{tech}</span>
-                                                    ))}
+                                            <>
+                                                <div className="flex justify-between items-start mb-auto">
+                                                    <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xl shadow-lg shadow-blue-500/20 group-hover:scale-110 transition-transform duration-300`}>
+                                                        <i className="ri-code-s-slash-line"></i>
+                                                    </div>
+                                                    <div className="relative z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setActiveMenu(activeMenu === project._id ? null : project._id);
+                                                            }}
+                                                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 text-white transition-colors"
+                                                        >
+                                                            <i className="ri-more-fill text-xl"></i>
+                                                        </button>
+                                                         {activeMenu === project._id && (
+                                                            <div className="absolute right-0 top-8 bg-[#1c1c1c]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl z-30 w-36 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                                                                <button 
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setEditingProject(project);
+                                                                        setNewName(project.name);
+                                                                        setIsRenameModalOpen(true);
+                                                                        setActiveMenu(null);
+                                                                    }}
+                                                                    className="w-full text-left px-3 py-2.5 text-xs font-medium text-gray-300 hover:bg-white/10 hover:text-white flex items-center gap-2 transition-colors"
+                                                                >
+                                                                    <i className="ri-pencil-line"></i> Rename
+                                                                </button>
+                                                                <button 
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleDeleteProject(project._id);
+                                                                    }}
+                                                                    className="w-full text-left px-3 py-2.5 text-xs font-medium text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center gap-2 transition-colors"
+                                                                >
+                                                                    <i className="ri-delete-bin-line"></i> Delete
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                <p className={`text-xs ${colors.secondaryText} line-clamp-2 leading-relaxed`}>
-                                                    {project.description || "A collaborative project for next-gen development."}
-                                                </p>
-                                            </div>
+
+                                                <div>
+                                                    <h3 className={`text-base font-bold ${colors.text} mb-1 truncate`}>{project.name}</h3>
+                                                    <p className={`text-[10px] ${colors.secondaryText} line-clamp-2 leading-relaxed mb-3`}>
+                                                        {project.description || "No description provided."}
+                                                    </p>
+                                                    <div className="flex items-center gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
+                                                        <span className="text-[10px] bg-white/5 border border-white/5 px-2 py-0.5 rounded text-gray-400 font-mono">
+                                                            {formatTimeAgo(project.updatedAt)}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </>
                                         )}
 
-                                        <div className={`flex items-center ${isGridView ? 'justify-between pt-4 border-t border-white/5' : 'gap-6'}`}>
-                                            <div className="flex -space-x-2">
-                                                {(project.users || []).slice(0, 3).map((u, i) => (
-                                                    <div key={i} className="w-7 h-7 rounded-full border border-[#141414] bg-[#222] flex items-center justify-center text-[10px] text-gray-300 font-bold ring-2 ring-[#0d0d0d]">
-                                                        {(u.username?.[0] || 'U').toUpperCase()}
+                                        {/* List View Content */}
+                                        {!isGridView && (
+                                            <>
+                                                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-lg shadow-lg shadow-blue-500/20`}>
+                                                    <i className="ri-code-s-slash-line"></i>
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <h3 className={`text-sm font-bold ${colors.text} truncate`}>{project.name}</h3>
+                                                    <p className={`text-xs ${colors.secondaryText} truncate`}>{project.description || "No description"}</p>
+                                                </div>
+                                                <div className="hidden sm:flex items-center gap-2">
+                                                    {(project.techStack || []).slice(0, 3).map((tech, i) => (
+                                                        <span key={i} className={`px-2 py-0.5 rounded text-[10px] font-medium bg-white/5 text-gray-400 border border-white/5`}>{tech}</span>
+                                                    ))}
+                                                </div>
+                                                <div className="flex items-center gap-4">
+                                                     <div className="flex -space-x-2">
+                                                        {(project.users || []).slice(0, 3).map((u, i) => (
+                                                            <div key={i} className="w-6 h-6 rounded-full border border-[#121212] bg-[#222] flex items-center justify-center text-[9px] text-gray-300 font-bold">
+                                                                {(u.email?.[0] || 'U').toUpperCase()}
+                                                            </div>
+                                                        ))}
                                                     </div>
-                                                ))}
-                                                {(project.users?.length || 0) > 3 && (
-                                                    <div className="w-7 h-7 rounded-full border border-[#141414] bg-[#1A1A1A] flex items-center justify-center text-[10px] text-gray-500 font-bold ring-2 ring-[#0d0d0d]">
-                                                        +{project.users.length - 3}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            {!isGridView && (
-                                                <div className="relative">
+                                                    <div className={`text-[10px] font-mono ${colors.secondaryText}`}>{formatTimeAgo(project.updatedAt)}</div>
+                                                </div>
+                                                 <div className="relative">
                                                      <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             setActiveMenu(activeMenu === project._id ? null : project._id);
                                                         }}
-                                                        className="text-gray-400 hover:text-white transition-colors p-2 rounded-full hover:bg-white/10"
+                                                        className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
                                                     >
-                                                        <i className="ri-more-2-fill text-lg"></i>
+                                                        <i className="ri-more-2-fill"></i>
                                                     </button>
                                                     {activeMenu === project._id && (
-                                                        <div className="absolute right-0 top-10 bg-[#1c1c1c]/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl z-20 w-40 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                                                         <div className="absolute right-0 top-8 bg-[#1c1c1c]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl z-20 w-36 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                                                             <button 
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
@@ -862,7 +1029,7 @@ const Home = () => {
                                                                     setIsRenameModalOpen(true);
                                                                     setActiveMenu(null);
                                                                 }}
-                                                                className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center gap-2 transition-colors"
+                                                                className="w-full text-left px-3 py-2.5 text-xs font-medium text-gray-300 hover:bg-white/10 hover:text-white flex items-center gap-2 transition-colors"
                                                             >
                                                                 <i className="ri-pencil-line"></i> Rename
                                                             </button>
@@ -871,22 +1038,18 @@ const Home = () => {
                                                                     e.stopPropagation();
                                                                     handleDeleteProject(project._id);
                                                                 }}
-                                                                className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center gap-2 transition-colors"
+                                                                className="w-full text-left px-3 py-2.5 text-xs font-medium text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center gap-2 transition-colors"
                                                             >
                                                                 <i className="ri-delete-bin-line"></i> Delete
                                                             </button>
                                                         </div>
                                                     )}
                                                 </div>
-                                            )}
-                                            {isGridView && (
-                                                <span className="text-xs text-gray-500 font-medium font-mono">
-                                                    {formatTimeAgo(project.updatedAt)}
-                                                </span>
-                                            )}
-                                        </div>
+                                            </>
+                                        )}
                                     </div>
                                 ))}
+
                             </div>
                         </>
                     )}
