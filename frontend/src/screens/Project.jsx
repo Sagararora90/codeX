@@ -26,6 +26,137 @@ function SyntaxHighlightedCode(props) {
   return <code {...props} ref={ref} />;
 }
 
+const FileTreeList = ({ 
+  items, level, path, onFileClick, isFolder, toggleFolder, expandedFolders, 
+  setRenamingFile, setRenameValue, renamingFile, renameValue, renameFile, deleteFile, 
+  currentFile, colors, setContextMenu 
+}) => {
+  return (
+    <>
+      {Object.keys(items).sort((a, b) => {
+        const aIsFolder = isFolder(items[a]);
+        const bIsFolder = isFolder(items[b]);
+        if (aIsFolder && !bIsFolder) return -1;
+        if (!aIsFolder && bIsFolder) return 1;
+        return a.localeCompare(b);
+      }).map((name, index) => {
+        const item = items[name];
+        const itemIsFolder = isFolder(item);
+        const fullPath = path ? `${path}/${name}` : name;
+        const isExpanded = expandedFolders.has(fullPath);
+        
+        if (renamingFile === fullPath) {
+          return (
+            <div key={index} style={{ paddingLeft: `${(level + 1) * 12}px` }} className="py-1">
+              <div className="flex items-center gap-2 bg-[#3c3c3c] rounded px-2 py-1 mr-2">
+                <i className={`text-sm ${itemIsFolder ? 'ri-folder-line text-yellow-400' : 'ri-file-code-line text-gray-400'}`}></i>
+                <input
+                  type="text"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') renameFile(fullPath, renameValue);
+                    else if (e.key === 'Escape') { setRenamingFile(null); setRenameValue(''); }
+                  }}
+                  onBlur={() => renameFile(fullPath, renameValue)}
+                  className="flex-grow bg-transparent text-[13px] text-white outline-none"
+                  autoFocus
+                />
+              </div>
+            </div>
+          );
+        }
+
+        if (itemIsFolder) {
+          return (
+            <div key={index}>
+              <button
+                onClick={() => toggleFolder(fullPath)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setContextMenu({ show: true, x: e.clientX, y: e.clientY, file: fullPath });
+                }}
+                className={`w-full text-left py-1 flex items-center gap-1 text-[13px] transition-colors group text-gray-300 hover:bg-[#2a2d2e]`}
+                style={{ paddingLeft: `${(level + 1) * 12}px` }}
+              >
+                <i className={`text-xs transition-transform ${isExpanded ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'}`}></i>
+                <i className={`text-sm ${isExpanded ? 'ri-folder-open-line text-yellow-400' : 'ri-folder-line text-yellow-400'}`}></i>
+                <span className="truncate flex-grow">{name}</span>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity pr-2">
+                  <i 
+                    className="ri-pencil-line text-gray-500 hover:text-white text-xs"
+                    onClick={(e) => { e.stopPropagation(); setRenamingFile(fullPath); setRenameValue(name); }}
+                  ></i>
+                  <i 
+                    className="ri-delete-bin-line text-gray-500 hover:text-red-400 text-xs"
+                    onClick={(e) => { e.stopPropagation(); deleteFile(fullPath); }}
+                  ></i>
+                </div>
+              </button>
+              {isExpanded && (
+                <FileTreeList 
+                  items={item.directory}
+                  level={level + 1}
+                  path={fullPath}
+                  onFileClick={onFileClick}
+                  isFolder={isFolder}
+                  toggleFolder={toggleFolder}
+                  expandedFolders={expandedFolders}
+                  setRenamingFile={setRenamingFile}
+                  setRenameValue={setRenameValue}
+                  renamingFile={renamingFile}
+                  renameValue={renameValue}
+                  renameFile={renameFile}
+                  deleteFile={deleteFile}
+                  currentFile={currentFile}
+                  colors={colors}
+                  setContextMenu={setContextMenu}
+                />
+              )}
+            </div>
+          );
+        }
+
+        return (
+          <button
+            key={index}
+            onClick={() => onFileClick(name, path)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setContextMenu({ show: true, x: e.clientX, y: e.clientY, file: fullPath });
+            }}
+            className={`w-full text-left py-1 flex items-center gap-2 text-[13px] transition-colors group ${
+              currentFile === fullPath ? 'bg-[#0078d4]/20 border-l-2 border-l-[#0078d4]' : `hover:${colors.menuHover}`
+            }`}
+            style={{ paddingLeft: `${(level + 1) * 12 + 16}px` }}
+          >
+            <i className={`text-base flex-shrink-0 ${
+              name.endsWith('.js') || name.endsWith('.jsx') ? 'ri-javascript-fill text-yellow-400' :
+              name.endsWith('.ts') || name.endsWith('.tsx') ? 'ri-code-box-fill text-blue-400' :
+              name.endsWith('.json') ? 'ri-braces-fill text-yellow-500' :
+              name.endsWith('.css') ? 'ri-css3-fill text-blue-300' :
+              name.endsWith('.html') ? 'ri-html5-fill text-orange-400' :
+              name.endsWith('.py') ? 'ri-python-fill text-green-400' :
+              `ri-file-code-line ${colors.secondaryText}`
+            }`}></i>
+            <span className={`truncate flex-grow ${colors.text} ${currentFile === fullPath ? 'font-bold' : ''}`}>{name}</span>
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity pr-2">
+              <i 
+                className={`${colors.secondaryText} hover:text-white text-xs ri-pencil-line`}
+                onClick={(e) => { e.stopPropagation(); setRenamingFile(fullPath); setRenameValue(name); }}
+              ></i>
+              <i 
+                className={`${colors.secondaryText} hover:text-red-400 text-xs ri-delete-bin-line`}
+                onClick={(e) => { e.stopPropagation(); deleteFile(fullPath); }}
+              ></i>
+            </div>
+          </button>
+        );
+      })}
+    </>
+  );
+};
+
 const Project = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -145,6 +276,7 @@ const Project = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [editorFontSize, setEditorFontSize] = useState(() => parseInt(localStorage.getItem('editorFontSize')) || 14);
   const [editorWordWrap, setEditorWordWrap] = useState(() => localStorage.getItem('editorWordWrap') !== 'false');
+  const [editorContext, setEditorContext] = useState({ selection: "", cursorLine: 1, mode: "AUTOCOMPLETE" });
 
   const handleFontSizeChange = (size) => {
     setEditorFontSize(size);
@@ -206,6 +338,9 @@ const Project = () => {
   const [chatWidth, setChatWidth] = useState(() => 
     parseInt(localStorage.getItem('chatWidth')) || 320
   );
+  const [previewWidth, setPreviewWidth] = useState(() => 
+    parseInt(localStorage.getItem('previewWidth')) || 384
+  );
   
   // Resize state
   const [isResizing, setIsResizing] = useState(null); // 'explorer', 'terminal', 'chat'
@@ -252,7 +387,8 @@ const Project = () => {
       startX: e.clientX,
       startY: e.clientY,
       startSize: type === 'explorer' ? explorerWidth : 
-                 type === 'terminal' ? terminalHeight : chatWidth
+                 type === 'terminal' ? terminalHeight : 
+                 type === 'preview' ? previewWidth : chatWidth
     };
   };
 
@@ -274,6 +410,10 @@ const Project = () => {
         const newWidth = Math.max(250, Math.min(600, startSize - (e.clientX - startX)));
         setChatWidth(newWidth);
         localStorage.setItem('chatWidth', newWidth);
+      } else if (isResizing === 'preview') {
+        const newWidth = Math.max(300, Math.min(1300, startSize - (e.clientX - startX)));
+        setPreviewWidth(newWidth);
+        localStorage.setItem('previewWidth', newWidth);
       }
     };
 
@@ -411,28 +551,71 @@ const Project = () => {
     }
   };
 
-  const send = () => {
-    if (!message.trim() || !project || !user) {
+  const send = (overrideMessage = null) => {
+    const rawMessage = overrideMessage !== null ? overrideMessage : message;
+    if (!rawMessage.trim() || !project || !user) {
       return;
     }
 
-    let messageToSend = message.trim();
+    let messageToSend = rawMessage.trim();
     let targetSessionId = currentSessionId;
 
     // Logic for Team Chat vs AI Chat
     if (isTeamChatOpen) {
         targetSessionId = 'general';
-        // Ensure we don't accidentally trigger AI in team chat unless explicitly typed (optional, but safer to assume human-only)
-        // For now, if user types @ai in team chat, it WILL trigger AI if we don't strip it. 
-        // But let's leave it as is -> "Team Chat" is for general, but if you @ai, maybe you want it? 
-        // User request: "make ai chat box and team chat box different". 
-        // Let's keep it simple: Team Chat = General. AI Chat = AI Session.
     } else if (isChatOpen) {
-        // AI Chat Panel
-        // If user didn't type @ai, probably implies they want to talk to AI in this panel.
-        if (!messageToSend.toLowerCase().includes('@ai')) {
-             messageToSend = `@ai ${messageToSend}`;
-        }
+      // AI Chat Panel - Inline Context Enrichment
+      if (currentFile && fileTree[currentFile]) {
+          const selection = window.getSelection();
+          const selectedText = selection.toString();
+          
+          // Heuristic for cursor line
+          let cursorLine = 1;
+          if (selection.rangeCount > 0) {
+              const range = selection.getRangeAt(0);
+              const preSelectionRange = range.cloneRange();
+              preSelectionRange.selectNodeContents(range.startContainer.parentElement || range.startContainer); // Fix for selection parent
+              preSelectionRange.setEnd(range.startContainer, range.startOffset);
+              const textBefore = preSelectionRange.toString();
+              cursorLine = textBefore.split('\n').length;
+          }
+
+          // Determine mode based on selection or keyword
+          let mode = "EXECUTION";
+          if (selectedText) mode = "EXECUTION"; 
+          
+          const lowerMsg = messageToSend.toLowerCase();
+          const isProceed = lowerMsg.includes('proceed');
+          
+          if (isProceed) {
+              mode = "EXECUTION";
+          } else if (lowerMsg.includes('plan') || (!currentFile && lowerMsg.length > 30)) {
+              mode = "PLANNER";
+          } else if (lowerMsg.includes('create') || lowerMsg.includes('bootstrap') || lowerMsg.includes('setup')) {
+              mode = "BOOTSTRAP";
+          } else if (lowerMsg.includes('fix')) {
+              mode = "FIX";
+          } else if (lowerMsg.includes('explain')) {
+              mode = "EXPLAIN";
+          }
+          
+          messageToSend = `MODE: ${mode}
+FILE: ${currentFile}
+CURSOR_LINE: ${cursorLine}
+SELECTED_CODE:
+${selectedText}
+
+FILE_CONTENT:
+${fileTree[currentFile].file.contents}
+
+PROJECT_FILES:
+${Object.keys(fileTree).join('\n- ')}
+
+USER_INTENT:
+${messageToSend.replace('@ai', '').trim()}`;
+      } else if (!messageToSend.toLowerCase().includes('@ai')) {
+          messageToSend = `@ai ${messageToSend}`;
+      }
     }
 
     const messageData = {
@@ -448,11 +631,15 @@ const Project = () => {
       setMessages((prevMessages) => [...prevMessages, messageData]);
       sendMessage("project-message", messageData);
 
-      if (messageToSend.includes("@ai")) {
+      if (messageToSend.includes("@ai") || messageToSend.startsWith('MODE:')) {
         setIsAiTyping(true);
+        // Safety timeout to clear typing indicator if backend hangs
+        setTimeout(() => setIsAiTyping(false), 30000);
       }
 
-      setMessage("");
+      if (overrideMessage === null) {
+        setMessage("");
+      }
     } catch (error) {
       console.error("Error sending message:", error);
       alert("Failed to send message. Please try again.");
@@ -469,60 +656,68 @@ const Project = () => {
     }
   };
 
-  const deleteFile = async (fileName) => {
-    if (!project?._id) {
-      alert("Project not loaded");
-      return;
-    }
+  const deleteFile = async (filePath) => {
+    if (!project?._id) return;
     
     try {
       const newFileTree = { ...fileTree };
-      delete newFileTree[fileName];
+      const parts = filePath.split('/');
+      let current = newFileTree;
+      
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (current[parts[i]] && current[parts[i]].directory) {
+          current = current[parts[i]].directory;
+        }
+      }
+      
+      delete current[parts[parts.length - 1]];
       setFileTree(newFileTree);
       
-      setOpenFiles(openFiles.filter(f => f !== fileName));
-      if (currentFile === fileName) {
-        setCurrentFile(null);
-      }
+      setOpenFiles(openFiles.filter(f => f !== filePath));
+      if (currentFile === filePath) setCurrentFile(null);
       
       await axios.put('/projects/update-file-tree', {
         projectId: project._id,
         fileTree: newFileTree
       });
+      
+      if (webContainer) {
+        await webContainer.mount(newFileTree);
+      }
     } catch (error) {
-      console.error("Error deleting file:", error);
-      alert("Failed to delete file");
-      setFileTree(fileTree);
+      console.error("Error deleting item:", error);
     }
   };
 
   // Create new file or folder
-  const createNewFile = async (name, type = 'file') => {
+  const createNewFile = async (name, type = 'file', parentPath = '') => {
     if (!name.trim() || !project?._id) return;
     
-    const fileName = type === 'folder' ? name : name;
-    
-    // Check if file/folder already exists
-    if (fileTree[fileName]) {
-      alert(`A ${type} with that name already exists`);
-      return;
-    }
-    
     try {
-      const newFileTree = { 
-        ...fileTree, 
-        [fileName]: type === 'folder' 
-          ? { directory: {} }  // Mark as directory
-          : { file: { contents: '' } }
-      };
+      const newFileTree = { ...fileTree };
+      const fullPath = parentPath ? `${parentPath}/${name}` : name;
+      const parts = fullPath.split('/');
+      let current = newFileTree;
+      
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!current[parts[i]]) current[parts[i]] = { directory: {} };
+        current = current[parts[i]].directory;
+      }
+      
+      const fileName = parts[parts.length - 1];
+      if (type === 'folder') {
+        current[fileName] = { directory: {} };
+      } else {
+        current[fileName] = { file: { contents: '' } };
+      }
+      
       setFileTree(newFileTree);
       
       if (type === 'file') {
-        setCurrentFile(fileName);
-        setOpenFiles([...new Set([...openFiles, fileName])]);
+        setCurrentFile(fullPath);
+        setOpenFiles([...new Set([...openFiles, fullPath])]);
       } else {
-        // Auto-expand the new folder
-        setExpandedFolders(prev => new Set([...prev, fileName]));
+        setExpandedFolders(prev => new Set([...prev, fullPath]));
       }
       
       await axios.put('/projects/update-file-tree', {
@@ -530,49 +725,61 @@ const Project = () => {
         fileTree: newFileTree
       });
       
+      if (webContainer) await webContainer.mount(newFileTree);
+      
       setIsCreatingNew(null);
       setNewItemName('');
     } catch (error) {
-      console.error("Error creating file:", error);
-      alert("Failed to create file");
+      console.error("Error creating item:", error);
     }
   };
 
   // Rename file
-  const renameFile = async (oldName, newName) => {
-    if (!newName.trim() || newName === oldName || !project?._id) {
+  const renameFile = async (oldPath, newName) => {
+    if (!newName.trim() || !project?._id) {
       setRenamingFile(null);
       setRenameValue('');
-      return;
-    }
-    
-    if (fileTree[newName]) {
-      alert('A file with that name already exists');
       return;
     }
     
     try {
       const newFileTree = { ...fileTree };
-      newFileTree[newName] = newFileTree[oldName];
-      delete newFileTree[oldName];
-      setFileTree(newFileTree);
       
-      // Update open files
-      setOpenFiles(openFiles.map(f => f === oldName ? newName : f));
-      if (currentFile === oldName) {
-        setCurrentFile(newName);
+      // Get reference to parent directory of old item
+      const oldParts = oldPath.split('/');
+      let currentOld = newFileTree;
+      for (let i = 0; i < oldParts.length - 1; i++) {
+        currentOld = currentOld[oldParts[i]].directory;
       }
+      
+      const oldName = oldParts[oldParts.length - 1];
+      const item = currentOld[oldName];
+      const parentPath = oldParts.slice(0, -1).join('/');
+      const newPath = parentPath ? `${parentPath}/${newName}` : newName;
+      
+      if (currentOld[newName]) {
+        alert('An item with that name already exists');
+        return;
+      }
+      
+      currentOld[newName] = item;
+      delete currentOld[oldName];
+      
+      setFileTree(newFileTree);
+      setOpenFiles(openFiles.map(f => f === oldPath ? newPath : f));
+      if (currentFile === oldPath) setCurrentFile(newPath);
       
       await axios.put('/projects/update-file-tree', {
         projectId: project._id,
         fileTree: newFileTree
       });
       
+      if (webContainer) await webContainer.mount(newFileTree);
+      
       setRenamingFile(null);
       setRenameValue('');
     } catch (error) {
-      console.error("Error renaming file:", error);
-      alert("Failed to rename file");
+      console.error("Error renaming item:", error);
     }
   };
 
@@ -622,6 +829,30 @@ const Project = () => {
     event.target.value = '';
   };
 
+  // Helper to unflatten flat paths (e.g., "src/main.js") into a nested structure
+  const unflattenFileTree = (flatTree) => {
+    const result = {};
+    Object.keys(flatTree).forEach(path => {
+      const parts = path.split('/');
+      let current = result;
+      
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (i === parts.length - 1) {
+          // It's a file
+          current[part] = flatTree[path];
+        } else {
+          // It's a directory
+          if (!current[part]) {
+            current[part] = { directory: {} };
+          }
+          current = current[part].directory;
+        }
+      }
+    });
+    return result;
+  };
+
   useEffect(() => {
     if (!project?._id || !user) return;
 
@@ -666,33 +897,177 @@ const Project = () => {
     if (!message) return null;
 
     let content = message;
+    let isRawCode = false;
+
     try {
       if (typeof message === "string" && (message.trim().startsWith("{") || message.trim().startsWith("["))) {
         const parsed = JSON.parse(message);
         
         if (parsed.type === 'fileTree' && parsed.files) {
           const fileNames = Object.keys(parsed.files);
+          const isTasksOnly = fileNames.length === 1 && fileNames[0] === 'TASKS.md';
+          
+          if (isTasksOnly) {
+              return (
+                <div className={`p-4 rounded-lg flex flex-col gap-3 ${appTheme === 'dark' ? 'bg-[#1e293b]' : 'bg-blue-50'} border border-blue-500/30 shadow-lg`}>
+                  <div className="flex items-center gap-2 text-blue-400 font-bold text-xs uppercase tracking-widest">
+                    <i className="ri-draft-line"></i>
+                    Antigravity Implementation Plan
+                  </div>
+                  <div className="text-[13px] text-gray-300 leading-relaxed overflow-auto max-h-[300px] prose prose-invert font-mono bg-black/20 p-3 rounded">
+                    <Markdown children={parsed.files['TASKS.md'].file.contents} />
+                  </div>
+                  <div className="flex items-center gap-2 pt-2">
+                    <button 
+                        onClick={() => { send("proceed"); }}
+                        className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded transition-all flex items-center gap-2"
+                    >
+                        <i className="ri-play-fill"></i>
+                        Confirm & Proceed
+                    </button>
+                    <span className="text-[10px] text-gray-500 italic">Phase: Planning to Execution</span>
+                  </div>
+                </div>
+              );
+          }
+          
           content = `✅ Generated ${fileNames.length} file${fileNames.length > 1 ? 's' : ''}:\n\n${fileNames.map(f => `- \`${f}\``).join('\n')}\n\nFiles have been added to the file tree on the right. You can click on any file to view and edit it.`;
+        } else if (parsed.type === 'plan') {
+          return (
+            <div className={`p-4 rounded-lg flex flex-col gap-3 ${appTheme === 'dark' ? 'bg-[#252526]' : 'bg-gray-50'} border ${colors.border}`}>
+              <div className="flex items-center gap-2 text-blue-400 font-bold text-xs uppercase tracking-widest">
+                <i className="ri-map-pin-line"></i>
+                Proposed Plan
+              </div>
+              <div className="text-sm font-medium">{parsed.goal}</div>
+              {parsed.tasks && parsed.tasks.length > 0 && (
+                <div className="flex flex-col gap-1.5 mt-1">
+                  {parsed.tasks.map((task, i) => (
+                    <div key={i} className="flex items-start gap-2 text-[13px] text-gray-400 group">
+                      <div className="mt-1 w-1.5 h-1.5 rounded-full bg-blue-500/50"></div>
+                      <span className="group-hover:text-gray-200 transition-colors">{task}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {parsed.questions && parsed.questions.length > 0 && (
+                <div className="p-3 bg-orange-500/10 border border-orange-500/20 rounded text-orange-200 text-xs">
+                  <div className="font-bold mb-1">Questions:</div>
+                  {parsed.questions.map((q, i) => <div key={i}>• {q}</div>)}
+                </div>
+              )}
+            </div>
+          );
         } else if (parsed.type === 'chat') {
           content = parsed.message || message;
+          
+          if (content.includes('FILES_REQUIRED:')) {
+              const filesText = content.split('FILES_REQUIRED:')[1];
+              // Extract anything that looks like a filename (e.g. index.html, main.js, app.py)
+              const files = filesText.match(/[\w-]+\.\w+/g) || [];
+              
+              if (files.length > 0) {
+                  return (
+                    <div className={`p-4 rounded-lg flex flex-col gap-3 ${appTheme === 'dark' ? 'bg-[#1e293b]' : 'bg-blue-50'} border border-blue-500/30 shadow-lg`}>
+                        <div className="flex items-center gap-2 text-blue-400 font-bold text-xs uppercase tracking-widest">
+                            <i className="ri-lock-unlock-line"></i>
+                            Permission Gate: File Creation
+                        </div>
+                        <div className="text-sm text-gray-300">
+                            The AI architect needs to create the following files to proceed:
+                        </div>
+                        <div className="flex flex-wrap gap-2 py-1">
+                            {files.map(f => (
+                                <span key={f} className="px-2 py-0.5 bg-blue-500/20 border border-blue-500/30 rounded text-blue-300 text-xs font-mono">
+                                    {f}
+                                </span>
+                            ))}
+                        </div>
+                        <div className="flex items-center gap-2 pt-2">
+                            <button 
+                                onClick={() => { 
+                                    const bootstrapMsg = `MODE: BOOTSTRAP\r\nFILES: ${files.join(', ')}`;
+                                    send(bootstrapMsg);
+                                }}
+                                className="px-4 py-1.5 bg-green-600 hover:bg-green-500 text-white text-xs font-semibold rounded transition-all flex items-center gap-2"
+                            >
+                                <i className="ri-checkbox-circle-line"></i>
+                                Confirm & Create Files
+                            </button>
+                        </div>
+                    </div>
+                  );
+              }
+          }
         } else {
           content = parsed.text || parsed.message || message;
+          // If the parsed object itself contains code-like text, allow raw code rendering
+          if (typeof content === 'string') {
+              const trimmed = content.trim();
+              isRawCode = /^(const|function|class|import|export|let|var|if|for|while|return|async|await)\b/.test(trimmed) || 
+                         (trimmed.includes('{') && trimmed.includes('}')) ||
+                         (trimmed.includes(';') && trimmed.length > 10);
+          }
         }
+      } else {
+        // Simple heuristic for "Is this raw code?"
+        const trimmed = message.trim();
+        isRawCode = /^(const|function|class|import|export|let|var|if|for|while|return|async|await)\b/.test(trimmed) || 
+                   (trimmed.includes('{') && trimmed.includes('}')) ||
+                   (trimmed.includes(';') && trimmed.length > 10);
       }
     } catch (e) {
-      // Not JSON or parse error, keep as is
+      isRawCode = true;
     }
+
+    const applyCode = () => {
+        if (!currentFile || !fileTree[currentFile]) {
+            alert("No file open to apply changes to.");
+            return;
+        }
+        
+        // This is a bit tricky with contentEditable. We attempt to find the code element.
+        const codeElement = document.querySelector('code[contenteditable="true"]');
+        if (codeElement) {
+            codeElement.focus();
+            const selection = window.getSelection();
+            if (selection.rangeCount > 0) {
+                const range = selection.getRangeAt(0);
+                range.deleteContents();
+                
+                // Insert the new code
+                const textNode = document.createTextNode(message);
+                range.insertNode(textNode);
+                
+                // Trigger blur logic to save
+                const event = new FocusEvent('blur');
+                codeElement.dispatchEvent(event);
+                
+                // Notify
+                alert("Applied to " + currentFile);
+            }
+        }
+    };
 
     return (
       <div className={`overflow-auto ${appTheme === 'dark' ? 'bg-[#1e1e1e]' : 'bg-white border ' + colors.border} text-sm rounded-lg p-3 ${colors.text}`}>
         <Markdown
-          children={content}
+          children={isRawCode ? `\`\`\`javascript\n${content}\n\`\`\`` : content}
           options={{
             overrides: {
               code: SyntaxHighlightedCode,
             },
           }}
         />
+        {isRawCode && currentFile && (
+            <button 
+                onClick={applyCode}
+                className="mt-3 px-3 py-1.5 bg-[#0078d4] hover:bg-[#005a9e] text-white text-xs font-medium rounded flex items-center gap-2 transition-colors"
+            >
+                <i className="ri-check-line text-sm"></i>
+                Apply to {currentFile.split('/').pop()}
+            </button>
+        )}
       </div>
     );
   }
@@ -809,7 +1184,8 @@ const Project = () => {
       console.log("Socket received message:", data);
 
       if (data.sender?._id == "ai") {
-        setIsAiTyping(false); 
+        setIsAiTyping(false);
+        console.log("AI message received, turning off typing indicator.");
         const messageContent = data.message || "";
         let parsedMessage;
         try {
@@ -821,19 +1197,25 @@ const Project = () => {
         const processFileTree = (files) => {
             if (!files || Object.keys(files).length === 0) return;
             
+            const nestedFiles = unflattenFileTree(files);
+            
             setFileTree((prevFileTree) => {
-                const normalizedFileTree = {};
-                Object.keys(files).forEach((filePath) => {
-                    const fileData = files[filePath];
-                    if (fileData?.file?.contents) {
-                        normalizedFileTree[filePath] = fileData;
-                    }
-                });
+                const mergeNested = (target, source) => {
+                    Object.keys(source).forEach(key => {
+                        if (source[key].directory) {
+                            if (!target[key]) target[key] = { directory: {} };
+                            mergeNested(target[key].directory, source[key].directory);
+                        } else {
+                            target[key] = source[key];
+                        }
+                    });
+                    return target;
+                };
                 
-                const mergedFileTree = { ...prevFileTree, ...normalizedFileTree };
+                const mergedFileTree = mergeNested({ ...prevFileTree }, nestedFiles);
                 if (project?._id) saveFileTree(mergedFileTree);
                 setWebContainer((wc) => {
-                  if (wc) wc.mount(normalizedFileTree).catch(console.error);
+                  if (wc) wc.mount(mergedFileTree).catch(console.error);
                   return wc;
                 });
                 return mergedFileTree;
@@ -845,49 +1227,28 @@ const Project = () => {
         if (parsedMessage.type === 'fileTree') {
              processFileTree(parsedMessage.files);
              const fileNames = Object.keys(parsedMessage.files || {});
-             messageToStore.message = JSON.stringify({ 
-                 text: fileNames.length === 1 
-                     ? `Generated ${fileNames[0]}` 
-                     : `Generated ${fileNames.join(', ')}`
-             });
-        } 
-        else if (parsedMessage.type === 'executionPlan') {
-             const { file, execution } = parsedMessage;
-             messageToStore.message = JSON.stringify({ 
-                 text: `📋 Execution Plan for ${file.name}:\nEnvironment: ${execution.environment}\nLanguage: ${execution.language}\nReason: ${execution.reason}` 
-             });
-        }
-        else if (parsedMessage.type === 'composite') {
-             if (parsedMessage.actions) {
-                 let filesGenerated = [];
-                 parsedMessage.actions.forEach(action => {
-                     if (action.type === 'fileTree') {
-                         processFileTree(action.files);
-                         filesGenerated.push(...Object.keys(action.files || {}));
-                     }
+             const isTasksOnly = fileNames.length === 1 && fileNames[0] === 'TASKS.md';
+             
+             if (isTasksOnly) {
+                 // Preserve TASKS.md for the special UI renderer
+                 messageToStore.message = messageContent;
+             } else {
+                 messageToStore.message = JSON.stringify({ 
+                     type: 'fileTree',
+                     text: fileNames.length === 1 
+                         ? `Generated ${fileNames[0]}` 
+                         : `Generated ${fileNames.join(', ')}`,
+                     files: parsedMessage.files // Keep files for rendering if needed
                  });
-                 const chatAction = parsedMessage.actions.find(a => a.type === 'chat');
-                 if (chatAction) {
-                     messageToStore.message = JSON.stringify({ 
-                         text: chatAction.message
-                     });
-                 } else if (filesGenerated.length > 0) {
-                     messageToStore.message = JSON.stringify({ 
-                         text: filesGenerated.length === 1 
-                             ? `Generated ${filesGenerated[0]}` 
-                             : `Generated ${filesGenerated.join(', ')}`
-                     });
-                 } else {
-                     return;
-                 }
              }
-        }
+        } 
         else if (parsedMessage.type === 'chat') {
-             messageToStore.message = JSON.stringify({ text: parsedMessage.message });
+             messageToStore.message = JSON.stringify({ type: 'chat', text: parsedMessage.message });
         }
         else {
              if (parsedMessage.fileTree) processFileTree(parsedMessage.fileTree);
              messageToStore.message = JSON.stringify({ 
+                 type: parsedMessage.type || 'chat',
                  text: parsedMessage.text || parsedMessage.message || messageContent
              });
         }
@@ -938,20 +1299,21 @@ const Project = () => {
   // Set up message handlers
 
 
+  const isBootingRef = useRef(false);
+
   useEffect(() => {
-    console.log("WebContainer initialization useEffect triggered");
-    console.log("Current webContainer state:", webContainer);
-    
-    if (!webContainer) {
-      console.log("WebContainer not found, attempting to boot...");
-      console.log("Cross-Origin Isolated:", window.crossOriginIsolated);
+    if (!webContainer && !isBootingRef.current) {
+      isBootingRef.current = true;
+      console.log("WebContainer initialization useEffect triggered");
       
       getWebContainer()
         .then((container) => {
           console.log("✅ WebContainer booted successfully:", container);
           setWebContainer(container);
+          isBootingRef.current = false;
         })
         .catch((err) => {
+          isBootingRef.current = false;
           console.error("❌ Error initializing web container:", err);
           let errorMessage = "Failed to initialize WebContainer.";
           
@@ -968,8 +1330,6 @@ const Project = () => {
           
           alert(errorMessage + "\n\nPlease check the browser console for details.");
         });
-    } else {
-      console.log("WebContainer already initialized");
     }
   }, []);
 
@@ -1562,118 +1922,30 @@ const Project = () => {
               <p className="text-[10px] mt-1 opacity-70">Click + to create files</p>
             </div>
           ) : (
-            Object.keys(fileTree).map((fileName, index) => {
-              const item = fileTree[fileName];
-              const itemIsFolder = isFolder(item);
-              const isExpanded = expandedFolders.has(fileName);
-              
-              // Rename mode
-              if (renamingFile === fileName) {
-                return (
-                  <div key={index} className="px-4 py-1">
-                    <div className="flex items-center gap-2 bg-[#3c3c3c] rounded px-2 py-1">
-                      <i className={`text-sm ${itemIsFolder ? 'ri-folder-line text-yellow-400' : 'ri-file-code-line text-gray-400'}`}></i>
-                      <input
-                        type="text"
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') renameFile(fileName, renameValue);
-                          else if (e.key === 'Escape') { setRenamingFile(null); setRenameValue(''); }
-                        }}
-                        onBlur={() => renameFile(fileName, renameValue)}
-                        className="flex-grow bg-transparent text-[13px] text-white outline-none"
-                        autoFocus
-                      />
-                    </div>
-                  </div>
-                );
-              }
-              
-              // Folder rendering
-              if (itemIsFolder) {
-                return (
-                  <div key={index}>
-                    <button
-                      onClick={() => toggleFolder(fileName)}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        setContextMenu({ show: true, x: e.clientX, y: e.clientY, file: fileName });
-                      }}
-                      className={`w-full text-left px-4 py-1 flex items-center gap-1 text-[13px] transition-colors group text-gray-300 hover:bg-[#2a2d2e]`}
-                    >
-                      <i className={`text-xs transition-transform ${isExpanded ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'}`}></i>
-                      <i className={`text-sm ${isExpanded ? 'ri-folder-open-line text-yellow-400' : 'ri-folder-line text-yellow-400'}`}></i>
-                      <span className="truncate flex-grow">{fileName}</span>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <i 
-                          className="ri-file-add-line text-gray-500 hover:text-white text-xs"
-                          onClick={(e) => { e.stopPropagation(); /* TODO: Create file in folder */ }}
-                          title="New File in Folder"
-                        ></i>
-                        <i 
-                          className="ri-pencil-line text-gray-500 hover:text-white text-xs"
-                          onClick={(e) => { e.stopPropagation(); setRenamingFile(fileName); setRenameValue(fileName); }}
-                          title="Rename"
-                        ></i>
-                        <i 
-                          className="ri-delete-bin-line text-gray-500 hover:text-red-400 text-xs"
-                          onClick={(e) => { e.stopPropagation(); deleteFile(fileName); }}
-                          title="Delete"
-                        ></i>
-                      </div>
-                    </button>
-                    {/* Folder contents would go here if we support nested structure */}
-                    {isExpanded && (
-                      <div className="pl-4 border-l border-[#3c3c3c] ml-5">
-                        <div className="px-2 py-2 text-xs text-gray-500 italic">Empty folder</div>
-                      </div>
-                    )}
-                  </div>
-                );
-              }
-              
-              // File rendering
-              return (
-                <button
-                  key={index}
-                  onClick={() => {
-                    setCurrentFile(fileName);
-                    setOpenFiles([...new Set([...openFiles, fileName])]);
-                  }}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    setContextMenu({ show: true, x: e.clientX, y: e.clientY, file: fileName });
-                  }}
-                  className={`w-full text-left px-4 py-1 flex items-center gap-2 text-[13px] transition-colors group ${
-                    currentFile === fileName ? 'bg-[#0078d4]/20 border-l-2 border-l-[#0078d4]' : `hover:${colors.menuHover}`
-                  }`}
-                >
-                  <i className={`text-base flex-shrink-0 ${
-                    fileName.endsWith('.js') || fileName.endsWith('.jsx') ? 'ri-javascript-fill text-yellow-400' :
-                    fileName.endsWith('.ts') || fileName.endsWith('.tsx') ? 'ri-code-box-fill text-blue-400' :
-                    fileName.endsWith('.json') ? 'ri-braces-fill text-yellow-500' :
-                    fileName.endsWith('.css') ? 'ri-css3-fill text-blue-300' :
-                    fileName.endsWith('.html') ? 'ri-html5-fill text-orange-400' :
-                    fileName.endsWith('.py') ? 'ri-python-fill text-green-400' :
-                    `ri-file-code-line ${colors.secondaryText}`
-                  }`}></i>
-                  <span className={`truncate flex-grow ${colors.text} ${currentFile === fileName ? 'font-bold' : ''}`}>{fileName}</span>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <i 
-                      className={`${colors.secondaryText} hover:text-white text-xs ri-pencil-line`}
-                      onClick={(e) => { e.stopPropagation(); setRenamingFile(fileName); setRenameValue(fileName); }}
-                      title="Rename"
-                    ></i>
-                    <i 
-                      className={`${colors.secondaryText} hover:text-red-400 text-xs ri-delete-bin-line`}
-                      onClick={(e) => { e.stopPropagation(); deleteFile(fileName); }}
-                      title="Delete"
-                    ></i>
-                  </div>
-                </button>
-              );
-            })
+            <div className="py-1">
+              <FileTreeList 
+                items={fileTree} 
+                level={0}
+                path=""
+                onFileClick={(name, p) => {
+                  const fullPath = p ? `${p}/${name}` : name;
+                  setCurrentFile(fullPath);
+                  setOpenFiles([...new Set([...openFiles, fullPath])]);
+                }}
+                isFolder={isFolder}
+                toggleFolder={toggleFolder}
+                expandedFolders={expandedFolders}
+                setRenamingFile={setRenamingFile}
+                setRenameValue={setRenameValue}
+                renamingFile={renamingFile}
+                renameValue={renameValue}
+                renameFile={renameFile}
+                deleteFile={deleteFile}
+                currentFile={currentFile}
+                colors={colors}
+                setContextMenu={setContextMenu}
+              />
+            </div>
           )}
         </div>
         {/* Resize Handle */}
@@ -1910,12 +2182,48 @@ const Project = () => {
                       });
                     } else {
                       const fileContent = normalizedFileTree[fileToRun]?.file?.contents || "";
-                      const ext = fileToRun.split('.').pop();
-                      const langMap = { py: 'python', cpp: 'cpp', c: 'cpp', java: 'java' };
+                      const ext = fileToRun.split('.').pop().toLowerCase();
+                      
+                      // 1. HTML Rendering support
+                      if (['html', 'htm'].includes(ext)) {
+                         setTerminalOutput(prev => [...prev, `▶ Starting static server for ${fileToRun}...`]);
+                         const serveProcess = await webContainer.spawn("npx", ["-y", "serve", "."]);
+                         setRunProcess(serveProcess);
+                         
+                         serveProcess.output.pipeTo(new WritableStream({
+                            write(chunk) {
+                              const cleaned = chunk.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
+                              if (cleaned) setTerminalOutput(prev => [...prev, cleaned]);
+                            }
+                         }));
+                         
+                         webContainer.on("server-ready", (port, url) => {
+                            setTerminalOutput(prev => [...prev, `🌐 Web server live at ${url}`]);
+                            setIframeUrl(url + '/' + fileToRun);
+                            setIsRunning(false);
+                         });
+                         return; 
+                      }
+                      
+                      // 2. JSX/TSX Component execution warning
+                      if (['jsx', 'tsx'].includes(ext)) {
+                         setTerminalOutput(prev => [...prev, `[WARNING] Cannot run a standalone .${ext} component. You need a full React project config (package.json, index.html). Try asking the AI to "Build a React boilerplate".`]);
+                         setIsRunning(false);
+                         return;
+                      }
+
+                      // 3. Backend Native Execution (C/C++, Java, Python)
+                      const langMap = { py: 'python', cpp: 'cpp', c: 'c', java: 'java' };
+                      
+                      if (!langMap[ext]) {
+                         setTerminalOutput(prev => [...prev, `[ERROR] Don't know how to execute file type: .${ext}`]);
+                         setIsRunning(false);
+                         return;
+                      }
                       
                       try {
                         const response = await axios.post('/projects/execute', {
-                          language: langMap[ext] || 'python',
+                          language: langMap[ext],
                           code: fileContent,
                           fileName: fileToRun
                         });
@@ -2085,7 +2393,15 @@ const Project = () => {
 
       {/* Preview Panel */}
       {iframeUrl && webContainer && (
-        <div className="w-96 flex flex-col h-full border-l border-[#414141]">
+        <div 
+          className="flex flex-col h-full border-l border-[#414141] relative flex-shrink-0"
+          style={{ width: previewWidth }}
+        >
+          {/* Resize Handle */}
+          <div 
+              className="absolute top-0 bottom-0 left-[-2px] w-1 cursor-col-resize hover:bg-[#0078d4] transition-colors z-20"
+              onMouseDown={(e) => startResize('preview', e)}
+          />
           <div className="h-9 bg-[#252526] flex items-center px-3 border-b border-[#1e1e1e]">
             <input
               type="text"
@@ -2094,7 +2410,11 @@ const Project = () => {
               className="flex-grow px-2 py-1 bg-[#3c3c3c] border border-[#3c3c3c] rounded text-xs text-gray-300 outline-none focus:border-[#0078d4]"
             />
           </div>
-          <iframe src={iframeUrl} className="w-full flex-grow bg-white"></iframe>
+          <iframe 
+            src={iframeUrl} 
+            className="w-full flex-grow bg-white"
+            style={{ pointerEvents: isResizing === 'preview' ? 'none' : 'auto' }}
+          ></iframe>
         </div>
       )}
 

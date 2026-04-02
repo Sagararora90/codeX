@@ -64,8 +64,7 @@ io.on('connection', socket => {
     socket.on('project-message', async data => {
 
         const message = data.message;
-
-        const aiIsPresentInMessage = message.includes('@ai');
+        const aiIsPresentInMessage = message.includes('@ai') || message.startsWith('MODE:');
         socket.broadcast.to(socket.roomId).emit('project-message', data)
 
         // Save message to database immediately to prevent race conditions
@@ -87,41 +86,48 @@ io.on('connection', socket => {
         }
 
         if (aiIsPresentInMessage) {
+            try {
+                const prompt = message.replace('@ai', '');
+                const modelType = data.modelType || 'groq';
+                console.log(`🤖 Using AI model: ${modelType}`);
+                
+                let currentFileTree = {};
+                if (projectId) {
+                    const project = await projectModel.findById(projectId);
+                    if (project) {
+                        currentFileTree = project.fileTree || {};
+                    }
+                }
 
+                const result = await generateResult(prompt, modelType, currentFileTree);
 
-            const prompt = message.replace('@ai', '');
-            
-            // Use the user's selected model type (defaults to 'groq' if not specified)
-            const modelType = data.modelType || 'groq';
-            console.log(`🤖 Using AI model: ${modelType}`);
-            
-            const result = await generateResult(prompt, modelType);
+                const aiMessage = {
+                    message: result,
+                    sender: {
+                        _id: 'ai',
+                        email: 'AI'
+                    },
+                    sessionId: data.sessionId,
+                    modelType: data.modelType
+                };
 
-            const aiMessage = {
-                message: result,
-                sender: {
-                    _id: 'ai',
-                    email: 'AI'
-                },
-                sessionId: data.sessionId,
-                modelType: data.modelType
-            };
+                io.to(socket.roomId).emit('project-message', aiMessage);
 
-            io.to(socket.roomId).emit('project-message', aiMessage);
-
-            // Save AI message to database too
-            if (projectId) {
-                try {
+                if (projectId) {
                     await projectModel.findByIdAndUpdate(
                         projectId,
                         { $push: { messages: aiMessage } },
                         { new: true }
                     );
-                } catch (err) {
-                    console.error('Error saving AI message:', err);
                 }
+            } catch (err) {
+                console.error('❌ AI Logic Error:', err);
+                io.to(socket.roomId).emit('project-message', {
+                    message: JSON.stringify({ type: 'chat', message: "AI had trouble processing this. Let's try again." }),
+                    sender: { _id: 'ai', email: 'AI' },
+                    sessionId: data.sessionId
+                });
             }
-
             return
         }
 

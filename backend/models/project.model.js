@@ -26,6 +26,11 @@ const projectSchema = new mongoose.Schema({
         type: [String],
         default: []
     },
+    metadata: {
+        language: { type: String, default: null },
+        framework: { type: String, default: null },
+        locked: { type: Boolean, default: false }
+    },
     messages: {
         type: Array,
         default: []

@@ -1,1175 +1,302 @@
 import fetch from "node-fetch";
 import Groq from "groq-sdk";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Initialize Groq client
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY || ""
 });
 
-// Initialize Gemini client
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-
 // Provider Configurations
 const MODELS = {
-  // Groq Models
+  // Groq Models (Primary Architecture & Execution)
   'groq': { provider: 'groq', id: 'llama-3.3-70b-versatile' },
   'groq-8b': { provider: 'groq', id: 'llama-3.1-8b-instant' },
   
-  // Gemini Models
-  'gemini': { provider: 'gemini', id: 'gemini-1.5-flash' },
-  'gemini-2-flash': { provider: 'gemini', id: 'gemini-2.0-flash-exp' },
+  // Gemini Models (Direct Fetch - Stable v1)
+  'gemini-pro': { provider: 'gemini', id: 'gemini-1.5-pro' },
+  'gemini-flash': { provider: 'gemini', id: 'gemini-1.5-flash' },
   
-  // Hugging Face Models (Serverless Inference)
-  'deepseek-r1': { provider: 'hf', id: 'deepseek-ai/DeepSeek-R1-Distill-Llama-8B' },
+  // Hugging Face Models (Fallback Only - Text Generation Path)
   'mistral': { provider: 'hf', id: 'mistralai/Mistral-7B-Instruct-v0.3' },
-  'qwen-2.5': { provider: 'hf', id: 'Qwen/Qwen2.5-7B-Instruct' },
-  'gemma-2': { provider: 'hf', id: 'google/gemma-2-9b-it' }
+  'qwen-2.5': { provider: 'hf', id: 'Qwen/Qwen2.5-7B-Instruct' }
 };
 
-/* ================= ENHANCED SYSTEM INSTRUCTION ================= */
+/* ================= THE ANTIGRAVITY INTENT ROUTER ================= */
 
-const SYSTEM_INSTRUCTION = `
-You are a helpful coding buddy integrated into a code editor. You understand what users want and generate exactly what they need.
+const INTENT_ROUTER_PROMPT = `
+You are an intent classifier for a coding IDE assistant.
 
-YOUR JOB:
-1. Read what the user wants carefully
-2. If they want to chat/ask questions → respond with "chat"
-3. If they want code (any hint of programming) → respond with "fileTree"
+Possible intents:
+1. CHAT        (greeting, casual message, question)
+2. PLAN        (create/build/make something new)
+3. PROCEED     (proceed, continue, next step)
+4. MODIFY_PLAN (change assumptions, tasks, stack)
+5. FIX         (error, bug, not working)
+6. UI_CHANGE   (fix UI, improve UX)
+7. UNKNOWN
 
-RESPONSE FORMATS:
+RULES:
+- Do NOT write code. Output ONLY one word from the intent list.
+- If casual/unclear, choose CHAT.
+`;
 
-For conversations/questions:
-{
-  "type": "chat",
-  "message": "your friendly response here"
-}
+const CHAT_MODE_PROMPT = `
+You are a conversational assistant inside a coding IDE.
+RULES: No tasks, no files, no code. Respond naturally and briefly.
+`;
 
-For ANY code request (problems, apps, scripts, servers):
-{
-  "type": "fileTree",
-  "files": {
-    "filename.ext": {
-      "file": {
-        "contents": "complete working code with \\n for newlines"
-      }
-    }
-  }
-}
+const PLANNING_PROMPT = `
+You are an AI architect. 
 
-CRITICAL - READ THIS:
-- NEVER give placeholder code like "Hello World" or "Add your code here" or "pass"
-- If user gives a problem (palindrome, calculator, sorting), SOLVE IT FULLY
-- If they mention Express/React/Flask, USE that framework
-- If they give examples (Input: 121, Output: true), your code MUST work for those
-- Test your solution mentally before sending
-- Use proper filenames: solution.py, server.js, Main.java, etc.
-- Escape: \\n (newlines), \\" (quotes), \\\\ (backslashes)
-- NO explanations outside JSON - code should be self-explanatory with comments
+MODE: PLANNING
 
-Think like a friend who actually solves the problem, not someone who gives templates!
+STRICT RULES:
+- Do NOT create application files.
+- Do NOT write code.
+- Do NOT assume language unless user specified.
+- Output MUST be a valid JSON object. All newlines inside the "contents" string MUST be properly escaped as \\n.
+- If the user asks for a React component or React app, you MUST plan a full Vite/React project architecture (including package.json, index.html, index.jsx, and App.jsx) rather than a standalone component, so they can run it natively.
 
-OUTPUT ONLY VALID JSON - NO MARKDOWN, NO EXTRA TEXT.
+TASKS.md FORMAT:
+# Goal
+<single sentence>
+
+# Stack
+Language: <locked or unknown>
+Framework: <if any>
+
+# Tasks
+- [ ] Task 1
+- [ ] Task 2
+- [ ] Task 3
+
+# Confirmation
+Ask the user to review and confirm.
+
+OUTPUT FORMAT (Must be valid JSON, perfectly escaped):
+{ "type": "fileTree", "files": { "TASKS.md": { "file": { "contents": "# Goal\\nBuild it\\n\\n# Tasks\\n- [ ] Task 1" } } } }
+`;
+
+const EXECUTION_PROMPT = `
+You are an AI execution agent inside a coding IDE.
+
+MODE: EXECUTION
+
+CURRENT TASK:
+{{CURRENT_TASK}}
+
+RULES (STRICT):
+- You are NOT allowed to return examples, schemas, or sample JSON.
+- You MUST fully implement the CURRENT TASK in the relevant files.
+- You MUST include the updated code for all modified files in the output.
+- You MUST update TASKS.md in the fileTree, marking the current task as [x].
+- Output MUST be a single, valid JSON fileTree containing TASKS.md AND the fully implemented source code files.
+- All newlines inside the "contents" string MUST be properly escaped as \\n. 
+- Do NOT output \`\`\`json markdown blocks, just the raw JSON object.
+- Do NOT explain. Do NOT invent APIs. Do NOT replan.
+
+If this task requires new files that don't exist yet, respond ONLY with:
+FILES_REQUIRED: [file1, file2]
+
+Otherwise, output the full implementation strictly in this JSON format:
+{ "type": "fileTree", "files": { "TASKS.md": { "file": { "contents": "... updated tasks list ..." } }, "App.jsx": { "file": { "contents": "... FULL new file content ..." } } } }
+`;
+
+const BOOTSTRAP_PROMPT = `
+You are an AI file bootstrapper. 
+
+MODE: BOOTSTRAP
+
+RULES:
+- Create the approved file(s) named in the prompt.
+- File must be FULLY IMPLEMENTED based on the project context. Do not use placeholders or 'minimal' content.
+- All newlines inside the "contents" string MUST be properly escaped as \\n.
+- Do NOT explain.
+- Output MUST be a valid JSON fileTree.
+
+OUTPUT FORMAT:
+{ "type": "fileTree", "files": { "filename.js": { "file": { "contents": "... FULL code ..." } } } }
 `;
 
 /* ================= PROVIDER LOGIC ================= */
 
-async function generateGroqResult(prompt, modelId) {
-    try {
-        const chatCompletion = await groq.chat.completions.create({
-            messages: [
-                { role: "system", content: SYSTEM_INSTRUCTION },
-                { role: "user", content: prompt }
-            ],
-            model: modelId,
-            response_format: { type: "json_object" }
-        });
+async function callAI(provider, modelId, prompt, forceSystem = null) {
+    console.log(`📡 Calling ${provider} for model ${modelId}...`);
+    
+    if (provider === 'groq') {
+        const messages = forceSystem ? [{ role: "system", content: forceSystem }, { role: "user", content: prompt }] : [{ role: "user", content: prompt }];
+        const chatCompletion = await groq.chat.completions.create({ messages, model: modelId });
         return chatCompletion.choices[0].message.content;
-    } catch (error) {
-        console.error("Groq Error:", error);
-        throw error;
-    }
-}
-
-async function generateGeminiResult(prompt, modelId) {
-    try {
-        const model = genAI.getGenerativeModel({ model: modelId, systemInstruction: SYSTEM_INSTRUCTION });
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        return response.text();
-    } catch (error) {
-        console.error("Gemini Error:", error);
-        throw error;
-    }
-}
-
-async function generateHFResult(prompt, modelId) {
-    try {
-        const response = await fetch(`https://api-inference.huggingface.co/models/${modelId}`, {
+    } else if (provider === 'gemini') {
+        const url = `https://generativelanguage.googleapis.com/v1/models/${modelId}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+        const finalPrompt = forceSystem ? `SYSTEM_INSTRUCTION:\n${forceSystem}\n\nUSER_PROMPT:\n${prompt}` : prompt;
+        
+        const response = await fetch(url, {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${process.env.HF_TOKEN}`,
-                "Content-Type": "application/json"
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                inputs: `<|system|>\n${SYSTEM_INSTRUCTION}\n<|user|>\n${prompt}\n<|assistant|>`,
-                parameters: {
-                    max_new_tokens: 2048,
-                    return_full_text: false,
-                    temperature: 0.7
-                }
+                contents: [{ parts: [{ text: finalPrompt }] }],
+                generationConfig: { temperature: 0.1, maxOutputTokens: 4096 }
             })
         });
-
+        
         const data = await response.json();
-        
-        // HF typically returns an array or an object with generated_text
-        let content = Array.isArray(data) ? data[0]?.generated_text : data.generated_text;
-        
-        if (!content) {
-            console.error("HF Error Data:", data);
-            throw new Error(data.error || "Failed to get response from Hugging Face");
+        if (data.error || !data.candidates) {
+            throw new Error(data.error?.message || "Gemini API Error");
         }
-
-        // Clean up JSON if model wraps it in markdown blocks
-        if (content.includes('```json')) {
-            content = content.split('```json')[1].split('```')[0].trim();
-        } else if (content.includes('```')) {
-            content = content.split('```')[1].split('```')[0].trim();
-        }
-
-        return content;
-    } catch (error) {
-        console.error("HF Error:", error);
-        throw error;
+        return data.candidates[0]?.content?.parts?.[0]?.text || "";
+    } else if (provider === 'hf') {
+        const url = `https://api-inference.huggingface.co/models/${modelId}`;
+        const finalPrompt = forceSystem ? `${forceSystem}\n\nUSER: ${prompt}` : prompt;
+        
+        const response = await fetch(url, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${process.env.HF_TOKEN}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+                inputs: finalPrompt,
+                parameters: { max_new_tokens: 2048, temperature: 0.1 }
+            })
+        });
+        const data = await response.json();
+        if (data.error || response.status !== 200) throw new Error(data.error?.message || response.statusText);
+        return Array.isArray(data) ? data[0]?.generated_text : data.generated_text;
     }
 }
 
-/* ================= MAIN EXPORT ================= */
+/* ================= RESPONSE PROCESSING ================= */
 
-export const generateResult = async (prompt, modelType) => {
-    const config = MODELS[modelType] || MODELS['groq'];
-    console.log(`🚀 Routing to ${config.provider} (${config.id})`);
-
-    try {
-        switch (config.provider) {
-            case 'groq':
-                return await generateGroqResult(prompt, config.id);
-            case 'gemini':
-                return await generateGeminiResult(prompt, config.id);
-            case 'hf':
-                return await generateHFResult(prompt, config.id);
-            default:
-                throw new Error("Invalid provider");
-        }
-    } catch (error) {
-        const isRateLimit = error.status === 429 || error.message.includes('429') || error.message.includes('rate limit');
-        
-        console.error("Primary Error:", error.message);
-        
-        // Fallback to stable Groq if everything else fails
-        if (modelType !== 'groq') {
-            console.log("🔄 Falling back to stable Groq...");
-            try {
-                return await generateGroqResult(prompt, MODELS['groq'].id);
-            } catch (fallbackError) {
-                if (fallbackError.status === 429 || fallbackError.message.includes('429')) {
-                    return JSON.stringify({
-                        type: 'chat',
-                        message: "⚠️ All free models are currently rate-limited. Please try another model like Cursor or wait a few minutes before trying again."
-                    });
+function processAIResponse(content) {
+    if (!content) return "";
+    const trimmed = content.trim();
+    if (trimmed.includes('{') && trimmed.includes('}')) {
+        try {
+            const cleaned = cleanJSON(content);
+            const parsed = JSON.parse(cleaned);
+            return JSON.stringify(parsed);
+        } catch (e) {
+            const startBrace = trimmed.indexOf('{');
+            const endBrace = trimmed.lastIndexOf('}');
+            if (startBrace !== -1 && endBrace !== -1) {
+                let candidate = trimmed.slice(startBrace, endBrace + 1);
+                while (candidate.length > 2) {
+                    try { return JSON.stringify(JSON.parse(candidate)); } 
+                    catch {
+                        const nextBrace = candidate.lastIndexOf('}', candidate.length - 2);
+                        if (nextBrace === -1) break;
+                        candidate = candidate.slice(0, nextBrace + 1);
+                    }
                 }
-                throw fallbackError;
             }
+            return JSON.stringify({ type: "chat", message: trimmed });
         }
-
-        if (isRateLimit) {
-            return JSON.stringify({
-                type: 'chat',
-                message: "⚠️ This model is currently rate-limited. Please try using another model (like Mistral, DeepSeek) or Cursor."
-            });
-        }
-
-        throw error;
     }
-};
-
-/* ================= ENHANCED LANGUAGE DETECTION ================= */
-
-const LANGUAGE_PATTERNS = {
-  python: {
-    keywords: ['python', 'phyton', 'pyhton', 'py', 'django', 'flask', 'pandas', 'numpy'],
-    extension: '.py',
-    priority: 1
-  },
-  javascript: {
-    keywords: ['javascript', 'js', 'node', 'nodejs', 'react', 'vue', 'express', 'npm'],
-    extension: '.js',
-    priority: 1
-  },
-  java: {
-    keywords: ['java', 'spring', 'maven', 'gradle'],
-    extension: '.java',
-    priority: 2
-  },
-  cpp: {
-    keywords: ['c++', 'cpp', 'c plus plus', 'cplus'],
-    extension: '.cpp',
-    priority: 2
-  },
-  c: {
-    keywords: ['c programming', ' c ', 'clang'],
-    extension: '.c',
-    priority: 3
-  },
-  html: {
-    keywords: ['html', 'webpage', 'web page'],
-    extension: '.html',
-    priority: 1
-  },
-  css: {
-    keywords: ['css', 'style', 'stylesheet'],
-    extension: '.css',
-    priority: 2
-  },
-  typescript: {
-    keywords: ['typescript', 'ts'],
-    extension: '.ts',
-    priority: 2
-  },
-  go: {
-    keywords: ['golang', 'go lang', ' go '],
-    extension: '.go',
-    priority: 2
-  },
-  rust: {
-    keywords: ['rust', 'cargo'],
-    extension: '.rs',
-    priority: 2
-  },
-  ruby: {
-    keywords: ['ruby', 'rails'],
-    extension: '.rb',
-    priority: 2
-  },
-  php: {
-    keywords: ['php', 'laravel'],
-    extension: '.php',
-    priority: 2
-  }
-};
-
-const CODE_INTENT_KEYWORDS = [
-  'code', 'program', 'script', 'function', 'class', 'write a', 'create a',
-  'build', 'make a', 'make an', 'develop', 'implement', 'generate code', 'algorithm',
-  'app', 'application', 'project', 'file', 'demo',
-  'calculator', 'game', 'tool', 'system', 'loop', 'array', 'sort',
-  'search', 'fetch', 'api', 'database', 'crud', 'hello world program',
-  'solve', 'solution', 'return', 'input:', 'output:', 'example',
-  'given', 'need to', 'your turn', 'now write',
-  // Framework/library keywords (strong code indicators)
-  'express', 'react', 'flask', 'django', 'spring', 'fastapi', 'next.js',
-  'server', 'api endpoint', 'rest api', 'graphql', 'websocket',
-  'component', 'hook', 'middleware', 'route', 'controller',
-  'banao', 'likho code', 'dikhao code', 'karo code' // Hindi keywords
-];
-
-const CHAT_INTENT_KEYWORDS = [
-  'hello', 'hi', 'hey', 'what', 'why', 'how', 'when', 'where', 'who',
-  'explain', 'tell me', 'describe', 'difference', 'compare',
-  'kya hai', 'kaise', 'kyu', 'kab', 'batao', 'samjhao'
-];
-
-/* ================= SMART LANGUAGE DETECTOR ================= */
-
-function detectLanguage(prompt) {
-  const p = prompt.toLowerCase();
-  
-  let bestMatch = null;
-  let highestScore = 0;
-
-  for (const [lang, config] of Object.entries(LANGUAGE_PATTERNS)) {
-    let score = 0;
-    
-    for (const keyword of config.keywords) {
-      if (p.includes(keyword)) {
-        score += (5 - config.priority); // Higher priority = higher score
-      }
-    }
-    
-    if (score > highestScore) {
-      highestScore = score;
-      bestMatch = lang;
-    }
-  }
-
-  // Only return language if we have a strong match (score > 0)
-  // Don't default to Python here - let analyzePrompt decide
-  return highestScore > 0 ? bestMatch : null;
+    return JSON.stringify({ type: "chat", message: trimmed });
 }
-
-/* ================= ENHANCED PROMPT ANALYZER ================= */
-
-function analyzePrompt(userPrompt) {
-  const p = userPrompt.toLowerCase().trim();
-
-  // Check if prompt ends with a language specification (strong code indicator)
-  const endsWithLanguage = /\b(in|using|with)\s+(python|java|c\+\+|cpp|javascript|js|c|go|rust|php|ruby)\s*$/i.test(p);
-
-  // Check for problem-solving patterns (Input:, Output:, Example, etc.)
-  const isProblemStatement = /input:|output:|example|given|you need to|return/i.test(userPrompt);
-
-  // First, check for explicit chat intents (highest priority)
-  const hasChatIntent = CHAT_INTENT_KEYWORDS.some(keyword => 
-    p.startsWith(keyword) || p.includes(' ' + keyword + ' ') || p.endsWith(keyword)
-  );
-
-  // Check if it's a question
-  const isQuestion = p.includes('?');
-
-  // Check for code generation intent
-  const hasCodeIntent = CODE_INTENT_KEYWORDS.some(keyword => p.includes(keyword));
-  
-  // Detect language mentions
-  const languageDetected = detectLanguage(userPrompt);
-
-  // Decision logic with priority:
-  
-  // 1. If ends with language specification → CODE (highest priority for code)
-  if (endsWithLanguage || isProblemStatement) {
-    const language = languageDetected || 'python';
-    return { type: 'code', language };
-  }
-
-  // 2. If starts with greeting/chat keyword and no code intent → CHAT
-  if (hasChatIntent && !hasCodeIntent && !languageDetected) {
-    return { type: 'chat', language: null };
-  }
-
-  // 3. If it's a question without code keywords → CHAT
-  if (isQuestion && !hasCodeIntent && !languageDetected) {
-    return { type: 'chat', language: null };
-  }
-
-  // 4. If has code intent OR specific language mentioned → CODE
-  if (hasCodeIntent || languageDetected) {
-    const language = languageDetected || 'python';
-    return { type: 'code', language };
-  }
-
-  // 5. Very short prompts (< 4 words) without code keywords → CHAT
-  const wordCount = p.split(/\s+/).length;
-  if (wordCount < 4 && !languageDetected) {
-    return { type: 'chat', language: null };
-  }
-
-  // 6. Default to chat for ambiguous cases
-  return { type: 'chat', language: null };
-}
-
-/* ================= SMART PROMPT BUILDER ================= */
-
-function buildPrompt(userPrompt, analysis) {
-  if (analysis.type === 'chat') {
-    return `
-The user is asking you a question or wants to chat. Just answer them normally like a helpful friend!
-
-Their question:
-${userPrompt}
-
-YOUR TASK:
-- Give a clear, helpful answer
-- Be friendly and conversational
-- NO code - just explanation
-- If they're confused, help them understand
-
-Return ONLY this JSON:
-{
-  "type": "chat",
-  "message": "your friendly response here"
-}
-`;
-  }
-
-  // Code generation
-  return `
-Bro, the user needs ${analysis.language.toUpperCase()} code. Help them out properly!
-
-What they want:
-${userPrompt}
-
-YOUR TASK:
-- If they mentioned Express/React/Flask/Django → USE IT, don't ignore
-- If it's a problem with examples → SOLVE IT COMPLETELY, test it mentally
-- NO "Hello World" or "TODO" or placeholder nonsense
-- Write REAL working code that actually does what they asked
-- Make sure it handles all the test cases they gave
-
-Technical stuff:
-- Return type "fileTree" 
-- Filename: something.${LANGUAGE_PATTERNS[analysis.language].extension}
-- Escape: \\n for newlines, \\" for quotes
-- Add comments so they understand the logic
-- Include all imports they'll need
-
-The code should work perfectly when they run it. Think like you're helping a friend, not giving them homework to complete!
-
-Return ONLY this JSON format:
-{
-  "type": "fileTree",
-  "files": {
-    "filename${LANGUAGE_PATTERNS[analysis.language].extension}": {
-      "file": {
-        "contents": "actual working solution here with \\\\n for newlines"
-      }
-    }
-  }
-}
-`;
-}
-
-/* ================= ENHANCED FALLBACK TEMPLATES ================= */
-
-const FALLBACK_TEMPLATES = {
-  python: (prompt) => {
-    const p = prompt.toLowerCase();
-    
-    // Palindrome problem
-    if (p.includes('palindrome')) {
-      return {
-        type: "fileTree",
-        files: {
-          "solution.py": {
-            file: {
-              contents: `# ${extractTaskFromPrompt(prompt)}\n# Check if integer is palindrome\n\ndef isPalindrome(x):\n    # Negative numbers are not palindromes\n    if x < 0:\n        return False\n    \n    # Convert to string and check if it reads same forwards and backwards\n    str_x = str(x)\n    return str_x == str_x[::-1]\n\n# Test cases\nif __name__ == "__main__":\n    # Example 1\n    print(isPalindrome(121))  # True\n    \n    # Example 2\n    print(isPalindrome(-121)) # False\n    \n    # Example 3\n    print(isPalindrome(10))   # False`
-            }
-          }
-        }
-      };
-    }
-    
-    // Calculator
-    if (p.includes('calculator')) {
-      return {
-        type: "fileTree",
-        files: {
-          "calculator.py": {
-            file: {
-              contents: `# ${extractTaskFromPrompt(prompt)}\n# Simple Calculator\n\ndef calculator():\n    print("Simple Calculator")\n    print("Operations: +, -, *, /")\n    \n    num1 = float(input("Enter first number: "))\n    operation = input("Enter operation: ")\n    num2 = float(input("Enter second number: "))\n    \n    if operation == '+':\n        result = num1 + num2\n    elif operation == '-':\n        result = num1 - num2\n    elif operation == '*':\n        result = num1 * num2\n    elif operation == '/':\n        result = num1 / num2 if num2 != 0 else "Error: Division by zero"\n    else:\n        result = "Invalid operation"\n    \n    print(f"Result: {result}")\n\nif __name__ == "__main__":\n    calculator()`
-            }
-          }
-        }
-      };
-    }
-    
-    // Sorting
-    if (p.includes('sort')) {
-      return {
-        type: "fileTree",
-        files: {
-          "sort.py": {
-            file: {
-              contents: `# ${extractTaskFromPrompt(prompt)}\n# Bubble Sort Algorithm\n\ndef bubble_sort(arr):\n    n = len(arr)\n    for i in range(n):\n        for j in range(0, n-i-1):\n            if arr[j] > arr[j+1]:\n                arr[j], arr[j+1] = arr[j+1], arr[j]\n    return arr\n\nif __name__ == "__main__":\n    numbers = [64, 34, 25, 12, 22, 11, 90]\n    print("Original array:", numbers)\n    sorted_array = bubble_sort(numbers.copy())\n    print("Sorted array:", sorted_array)`
-            }
-          }
-        }
-      };
-    }
-    
-    // Default Python template
-    return {
-      type: "fileTree",
-      files: {
-        "main.py": {
-          file: {
-            contents: `# ${extractTaskFromPrompt(prompt)}\n\ndef main():\n    print("Hello World")\n    # Add your code here\n\nif __name__ == "__main__":\n    main()`
-          }
-        }
-      }
-    };
-  },
-
-  javascript: (prompt) => {
-    const p = prompt.toLowerCase();
-    
-    // Express server
-    if (p.includes('express') || p.includes('server') || p.includes('api')) {
-      return {
-        type: "fileTree",
-        files: {
-          "server.js": {
-            file: {
-              contents: `// ${extractTaskFromPrompt(prompt)}\n// Express Server\n\nconst express = require('express');\nconst app = express();\nconst PORT = 3000;\n\n// Middleware\napp.use(express.json());\n\n// Routes\napp.get('/', (req, res) => {\n    res.json({ message: 'Hello from Express Server!' });\n});\n\napp.get('/api/data', (req, res) => {\n    res.json({ data: 'Sample data from API' });\n});\n\napp.post('/api/data', (req, res) => {\n    const { name } = req.body;\n    res.json({ message: \`Received: \${name}\` });\n});\n\n// Start server\napp.listen(PORT, () => {\n    console.log(\`Server running on http://localhost:\${PORT}\`);\n});`
-            }
-          }
-        }
-      };
-    }
-    
-    // Palindrome
-    if (p.includes('palindrome')) {
-      return {
-        type: "fileTree",
-        files: {
-          "solution.js": {
-            file: {
-              contents: `// ${extractTaskFromPrompt(prompt)}\n// Check if integer is palindrome\n\nfunction isPalindrome(x) {\n    // Negative numbers are not palindromes\n    if (x < 0) return false;\n    \n    // Convert to string and check\n    const str = x.toString();\n    return str === str.split('').reverse().join('');\n}\n\n// Test cases\nconsole.log(isPalindrome(121));  // true\nconsole.log(isPalindrome(-121)); // false\nconsole.log(isPalindrome(10));   // false`
-            }
-          }
-        }
-      };
-    }
-    
-    // Default JavaScript
-    return {
-      type: "fileTree",
-      files: {
-        "main.js": {
-          file: {
-            contents: `// ${extractTaskFromPrompt(prompt)}\n\nfunction main() {\n    console.log("Hello World");\n    // Add your code here\n}\n\nmain();`
-          }
-        }
-      }
-    };
-  },
-
-  java: (prompt) => {
-    const p = prompt.toLowerCase();
-    
-    // Palindrome
-    if (p.includes('palindrome')) {
-      return {
-        type: "fileTree",
-        files: {
-          "Solution.java": {
-            file: {
-              contents: `// ${extractTaskFromPrompt(prompt)}\n// Check if integer is palindrome\n\npublic class Solution {\n    public static boolean isPalindrome(int x) {\n        // Negative numbers are not palindromes\n        if (x < 0) return false;\n        \n        // Reverse the number\n        int original = x;\n        int reversed = 0;\n        \n        while (x != 0) {\n            int digit = x % 10;\n            reversed = reversed * 10 + digit;\n            x /= 10;\n        }\n        \n        return original == reversed;\n    }\n    \n    public static void main(String[] args) {\n        System.out.println(isPalindrome(121));  // true\n        System.out.println(isPalindrome(-121)); // false\n        System.out.println(isPalindrome(10));   // false\n    }\n}`
-            }
-          }
-        }
-      };
-    }
-    
-    // Default Java
-    return {
-      type: "fileTree",
-      files: {
-        "Main.java": {
-          file: {
-            contents: `// ${extractTaskFromPrompt(prompt)}\n\npublic class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello World");\n        // Add your code here\n    }\n}`
-          }
-        }
-      }
-    };
-  },
-
-  cpp: (prompt) => {
-    const p = prompt.toLowerCase();
-    
-    // Coin Change Problem
-    if (p.includes('coin') && (p.includes('change') || p.includes('dp') || p.includes('dynamic'))) {
-      return {
-        type: "fileTree",
-        files: {
-          "coin_change.cpp": {
-            file: {
-              contents: `// ${extractTaskFromPrompt(prompt)}
-// Coin Change Problem - Dynamic Programming
-
-#include <iostream>
-#include <vector>
-#include <climits>
-using namespace std;
-
-// Returns minimum coins needed to make amount
-// Returns -1 if not possible
-int coinChange(vector<int>& coins, int amount) {
-    // dp[i] = minimum coins needed for amount i
-    vector<int> dp(amount + 1, INT_MAX);
-    dp[0] = 0;  // 0 coins needed for amount 0
-    
-    for (int i = 1; i <= amount; i++) {
-        for (int coin : coins) {
-            if (coin <= i && dp[i - coin] != INT_MAX) {
-                dp[i] = min(dp[i], dp[i - coin] + 1);
-            }
-        }
-    }
-    
-    return dp[amount] == INT_MAX ? -1 : dp[amount];
-}
-
-int main() {
-    vector<int> coins = {1, 2, 5};
-    int amount = 11;
-    
-    int result = coinChange(coins, amount);
-    
-    if (result == -1) {
-        cout << "Cannot make amount " << amount << endl;
-    } else {
-        cout << "Minimum coins needed for " << amount << ": " << result << endl;
-    }
-    
-    // Test cases
-    cout << "\\nMore test cases:" << endl;
-    cout << "Amount 3: " << coinChange(coins, 3) << " coins" << endl;   // 2 (1+2)
-    cout << "Amount 6: " << coinChange(coins, 6) << " coins" << endl;   // 2 (1+5)
-    cout << "Amount 10: " << coinChange(coins, 10) << " coins" << endl; // 2 (5+5)
-    
-    return 0;
-}`
-            }
-          }
-        }
-      };
-    }
-    
-    // Palindrome
-    if (p.includes('palindrome')) {
-      return {
-        type: "fileTree",
-        files: {
-          "palindrome.cpp": {
-            file: {
-              contents: `// ${extractTaskFromPrompt(prompt)}
-// Check if integer is palindrome
-
-#include <iostream>
-#include <string>
-#include <algorithm>
-using namespace std;
-
-bool isPalindrome(int x) {
-    if (x < 0) return false;
-    
-    string str = to_string(x);
-    string rev = str;
-    reverse(rev.begin(), rev.end());
-    
-    return str == rev;
-}
-
-int main() {
-    cout << boolalpha;
-    cout << isPalindrome(121) << endl;  // true
-    cout << isPalindrome(-121) << endl; // false
-    cout << isPalindrome(10) << endl;   // false
-    return 0;
-}`
-            }
-          }
-        }
-      };
-    }
-    
-    // Fibonacci
-    if (p.includes('fibonacci') || p.includes('fib')) {
-      return {
-        type: "fileTree",
-        files: {
-          "fibonacci.cpp": {
-            file: {
-              contents: `// ${extractTaskFromPrompt(prompt)}
-// Fibonacci Sequence
-
-#include <iostream>
-#include <vector>
-using namespace std;
-
-// Iterative approach - O(n) time, O(1) space
-long long fibonacci(int n) {
-    if (n <= 1) return n;
-    
-    long long prev = 0, curr = 1;
-    for (int i = 2; i <= n; i++) {
-        long long next = prev + curr;
-        prev = curr;
-        curr = next;
-    }
-    return curr;
-}
-
-// DP approach with memoization
-long long fibonacciDP(int n, vector<long long>& memo) {
-    if (n <= 1) return n;
-    if (memo[n] != -1) return memo[n];
-    
-    memo[n] = fibonacciDP(n-1, memo) + fibonacciDP(n-2, memo);
-    return memo[n];
-}
-
-int main() {
-    cout << "Fibonacci sequence:" << endl;
-    for (int i = 0; i <= 10; i++) {
-        cout << "F(" << i << ") = " << fibonacci(i) << endl;
-    }
-    return 0;
-}`
-            }
-          }
-        }
-      };
-    }
-    
-    // Sorting
-    if (p.includes('sort') || p.includes('bubble') || p.includes('quick') || p.includes('merge')) {
-      return {
-        type: "fileTree",
-        files: {
-          "sorting.cpp": {
-            file: {
-              contents: `// ${extractTaskFromPrompt(prompt)}
-// Sorting Algorithms
-
-#include <iostream>
-#include <vector>
-using namespace std;
-
-void printArray(vector<int>& arr) {
-    for (int x : arr) cout << x << " ";
-    cout << endl;
-}
-
-// Bubble Sort - O(n^2)
-void bubbleSort(vector<int>& arr) {
-    int n = arr.size();
-    for (int i = 0; i < n-1; i++) {
-        for (int j = 0; j < n-i-1; j++) {
-            if (arr[j] > arr[j+1]) {
-                swap(arr[j], arr[j+1]);
-            }
-        }
-    }
-}
-
-// Quick Sort - O(n log n) average
-int partition(vector<int>& arr, int low, int high) {
-    int pivot = arr[high];
-    int i = low - 1;
-    for (int j = low; j < high; j++) {
-        if (arr[j] < pivot) {
-            i++;
-            swap(arr[i], arr[j]);
-        }
-    }
-    swap(arr[i+1], arr[high]);
-    return i + 1;
-}
-
-void quickSort(vector<int>& arr, int low, int high) {
-    if (low < high) {
-        int pi = partition(arr, low, high);
-        quickSort(arr, low, pi - 1);
-        quickSort(arr, pi + 1, high);
-    }
-}
-
-int main() {
-    vector<int> arr = {64, 34, 25, 12, 22, 11, 90};
-    
-    cout << "Original: "; printArray(arr);
-    
-    quickSort(arr, 0, arr.size() - 1);
-    
-    cout << "Sorted: "; printArray(arr);
-    
-    return 0;
-}`
-            }
-          }
-        }
-      };
-    }
-    
-    // Factorial
-    if (p.includes('factorial')) {
-      return {
-        type: "fileTree",
-        files: {
-          "factorial.cpp": {
-            file: {
-              contents: `// ${extractTaskFromPrompt(prompt)}
-// Factorial Calculation
-
-#include <iostream>
-using namespace std;
-
-long long factorialIterative(int n) {
-    long long result = 1;
-    for (int i = 2; i <= n; i++) {
-        result *= i;
-    }
-    return result;
-}
-
-long long factorialRecursive(int n) {
-    if (n <= 1) return 1;
-    return n * factorialRecursive(n - 1);
-}
-
-int main() {
-    for (int i = 0; i <= 10; i++) {
-        cout << i << "! = " << factorialIterative(i) << endl;
-    }
-    return 0;
-}`
-            }
-          }
-        }
-      };
-    }
-    
-    // Prime numbers
-    if (p.includes('prime')) {
-      return {
-        type: "fileTree",
-        files: {
-          "prime.cpp": {
-            file: {
-              contents: `// ${extractTaskFromPrompt(prompt)}
-// Prime Number Check
-
-#include <iostream>
-#include <cmath>
-using namespace std;
-
-bool isPrime(int n) {
-    if (n <= 1) return false;
-    if (n <= 3) return true;
-    if (n % 2 == 0 || n % 3 == 0) return false;
-    
-    for (int i = 5; i <= sqrt(n); i += 6) {
-        if (n % i == 0 || n % (i + 2) == 0) {
-            return false;
-        }
-    }
-    return true;
-}
-
-int main() {
-    cout << boolalpha;
-    cout << "Is 2 prime? " << isPrime(2) << endl;   // true
-    cout << "Is 17 prime? " << isPrime(17) << endl; // true
-    cout << "Is 4 prime? " << isPrime(4) << endl;   // false
-    cout << "Is 97 prime? " << isPrime(97) << endl; // true
-    return 0;
-}`
-            }
-          }
-        }
-      };
-    }
-    
-    // Default C++ - generic algorithm template (not Hello World!)
-    return {
-      type: "fileTree",
-      files: {
-        "solution.cpp": {
-          file: {
-            contents: `// ${extractTaskFromPrompt(prompt)}
-
-#include <iostream>
-#include <vector>
-#include <algorithm>
-using namespace std;
-
-// TODO: Implement the requested functionality
-// Based on: ${prompt.substring(0, 100)}
-
-int main() {
-    // Your algorithm implementation goes here
-    // This is a template - the AI should provide actual code
-    
-    cout << "Implement: ${extractTaskFromPrompt(prompt).replace(/"/g, '\\"')}" << endl;
-    
-    return 0;
-}`
-          }
-        }
-      }
-    };
-  },
-
-  c: (prompt) => ({
-    type: "fileTree",
-    files: {
-      "main.c": {
-        file: {
-          contents: `// ${extractTaskFromPrompt(prompt)}\n\n#include <stdio.h>\n\nint main() {\n    printf("Hello World\\\\n");\n    // Add your code here\n    return 0;\n}`
-        }
-      }
-    }
-  }),
-
-  html: (prompt) => ({
-    type: "fileTree",
-    files: {
-      "index.html": {
-        file: {
-          contents: `<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <title>${extractTaskFromPrompt(prompt)}</title>\n</head>\n<body>\n    <h1>Hello World</h1>\n    <!-- Add your content here -->\n</body>\n</html>`
-        }
-      }
-    }
-  }),
-
-  go: (prompt) => ({
-    type: "fileTree",
-    files: {
-      "main.go": {
-        file: {
-          contents: `// ${extractTaskFromPrompt(prompt)}\n\npackage main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello World")\n    // Add your code here\n}`
-        }
-      }
-    }
-  }),
-
-  rust: (prompt) => ({
-    type: "fileTree",
-    files: {
-      "main.rs": {
-        file: {
-          contents: `// ${extractTaskFromPrompt(prompt)}\n\nfn main() {\n    println!("Hello World");\n    // Add your code here\n}`
-        }
-      }
-    }
-  })
-};
-
-function extractTaskFromPrompt(prompt) {
-  return prompt.slice(0, 50).replace(/\n/g, ' ');
-}
-
-function generateFallback(prompt) {
-  const analysis = analyzePrompt(prompt);
-  
-  if (analysis.type === 'chat') {
-    return {
-      type: "chat",
-      message: "I'm here to help! Could you please provide more details about what you'd like to know or create?"
-    };
-  }
-
-  // Generate code fallback
-  const template = FALLBACK_TEMPLATES[analysis.language];
-  if (template) {
-    return template(prompt);
-  }
-
-  // Ultimate fallback - Python
-  return FALLBACK_TEMPLATES.python(prompt);
-}
-
-/* ================= JSON CLEANER ================= */
 
 function cleanJSON(content) {
-  // Remove markdown code blocks
-  let cleaned = content.replace(/```json\s*/g, '').replace(/```\s*/g, '');
-  
-  // Remove any text before first { or [
-  const firstBrace = cleaned.indexOf('{');
-  const firstBracket = cleaned.indexOf('[');
-  
-  let startIndex = -1;
-  if (firstBrace !== -1 && firstBracket !== -1) {
-    startIndex = Math.min(firstBrace, firstBracket);
-  } else if (firstBrace !== -1) {
-    startIndex = firstBrace;
-  } else if (firstBracket !== -1) {
-    startIndex = firstBracket;
-  }
-  
-  if (startIndex > 0) {
-    cleaned = cleaned.slice(startIndex);
-  }
-  
-  // Remove any text after last } or ]
-  const lastBrace = cleaned.lastIndexOf('}');
-  const lastBracket = cleaned.lastIndexOf(']');
-  const endIndex = Math.max(lastBrace, lastBracket);
-  
-  if (endIndex !== -1 && endIndex < cleaned.length - 1) {
-    cleaned = cleaned.slice(0, endIndex + 1);
-  }
-  
-  return cleaned.trim();
+    let cleaned = content.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1) {
+        cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+    }
+    return cleaned.trim();
 }
 
-/* ================= RESPONSE VALIDATOR ================= */
+/* ================= TASK PARSER ================= */
 
-function validateResponse(parsed) {
-  if (!parsed.type) {
-    throw new Error("Missing type field");
-  }
-
-  if (parsed.type === "chat") {
-    if (typeof parsed.message !== "string" || !parsed.message.trim()) {
-      throw new Error("Invalid or empty chat message");
-    }
-    return true;
-  }
-
-  if (parsed.type === "fileTree") {
-    if (!parsed.files || typeof parsed.files !== "object" || Object.keys(parsed.files).length === 0) {
-      throw new Error("Invalid or empty fileTree");
-    }
-    
-    // Validate each file
-    for (const [filename, fileData] of Object.entries(parsed.files)) {
-      if (!fileData.file || typeof fileData.file.contents !== "string") {
-        throw new Error(`Invalid file structure for ${filename}`);
-      }
-    }
-    return true;
-  }
-
-  throw new Error("Invalid type: must be 'chat' or 'fileTree'");
+function getNextTask(tasksContent) {
+    if (!tasksContent) return null;
+    const lines = tasksContent.split('\n');
+    const uncheckedRegex = /^\s*[-\*]\s*\[\s*\]/;
+    const unchecked = lines.find(line => uncheckedRegex.test(line));
+    return unchecked ? unchecked.replace(uncheckedRegex, '').trim() : null;
 }
 
-/* ================= GROQ GENERATION FUNCTION ================= */
+/* ================= THE BRAIN (MAIN ENTRY) ================= */
 
-async function generateResultWithGroq(userPrompt) {
-  try {
-    // Analyze the prompt
-    const analysis = analyzePrompt(userPrompt);
-    const enhancedPrompt = buildPrompt(userPrompt, analysis);
+export const generateResult = async (userInput, modelType, currentFileTree = {}) => {
+    // Extract the raw user message for the intent router (prevents confusing the classifier with massive context)
+    let extractedIntent = userInput;
+    const intentMatch = userInput.match(/USER_INTENT:\s*([\s\S]*)/);
+    if (intentMatch) {
+        extractedIntent = intentMatch[1].trim();
+    }
 
-    console.log(`\n🤖 [Groq] Hey! I got your request...`);
-    console.log(`📋 You want: ${analysis.type === 'chat' ? 'an answer' : `code in ${analysis.language}`}`);
+    // 1. CLASSIFY INTENT
+    let intent = "CHAT";
+    try {
+        const intentResult = await callAI('groq', 'llama-3.1-8b-instant', extractedIntent, INTENT_ROUTER_PROMPT);
+        intent = intentResult.trim().toUpperCase().split('\n')[0].replace(/[^A-Z_]/g, '');
+    } catch (e) {
+        console.warn("Intent classification failed, defaulting to CHAT.");
+    }
+    console.log(`🎯 Intent Detected: ${intent}`);
 
-    const chatCompletion = await groq.chat.completions.create({
-      messages: [
-        { role: "system", content: SYSTEM_INSTRUCTION },
-        { role: "user", content: enhancedPrompt }
-      ],
-      model: "llama-3.3-70b-versatile",
-      temperature: 0.2,
-      max_tokens: 8000,
+    // If frontend explicitly sets BOOTSTRAP, override intent
+    if (userInput.includes('MODE: BOOTSTRAP')) {
+        intent = "BOOTSTRAP";
+    }
+
+    // 2. CONTEXT PREPARATION
+    let contextString = "";
+    Object.entries(currentFileTree).forEach(([path, data]) => {
+        if (data.file && data.file.contents && !path.includes('node_modules')) {
+            contextString += `--- FILE: ${path} ---\n${data.file.contents}\n`;
+        }
     });
 
-    const content = chatCompletion.choices[0]?.message?.content?.trim();
+    // 3. SELECT OPTIMAL MODE
+    let systemPrompt = "";
+    let finalPrompt = userInput;
+    let preferredModel = 'groq';
 
-    if (!content) {
-      console.warn("⚠️ Groq gave empty response, using my backup solution...");
-      return JSON.stringify(generateFallback(userPrompt));
+    if (intent === "CHAT") {
+        systemPrompt = CHAT_MODE_PROMPT;
+        preferredModel = 'groq-8b';
+    } else if (intent === "PLAN") {
+        systemPrompt = PLANNING_PROMPT;
+        finalPrompt = `USER_REQUEST: ${extractedIntent}\n\nEXISTING_FILES:\n${contextString}`;
+        preferredModel = 'gemini-pro';
+    } else if (intent === "BOOTSTRAP") {
+        systemPrompt = BOOTSTRAP_PROMPT;
+        finalPrompt = userInput;
+        preferredModel = 'groq';
+    } else if (intent === "PROCEED" || intent === "FIX" || intent === "UI_CHANGE") {
+        const tasksMd = currentFileTree['TASKS.md']?.file?.contents;
+        let currentTask = getNextTask(tasksMd);
+        
+        // If they just said "proceed" but there is no task, warn them.
+        if (intent === "PROCEED" && !currentTask) {
+            return JSON.stringify({ type: "chat", message: "No active plan or all tasks complete. Tell me what you'd like to build next, or use 'make [feature]' to create a new plan!" });
+        }
+        
+        // If they want a fix/UI change without a task list, we just act directly on their request.
+        if (!currentTask) {
+            currentTask = extractedIntent; // Treat their request as the "current task"
+        }
+        
+        systemPrompt = EXECUTION_PROMPT.replace('{{CURRENT_TASK}}', currentTask);
+        finalPrompt = `USER_INTENT: ${extractedIntent}\n\nPROJECT_FILES:\n${contextString}`;
+        preferredModel = 'groq';
+    } else {
+        systemPrompt = CHAT_MODE_PROMPT;
+        preferredModel = 'groq-8b';
     }
 
-    try {
-      // Clean and parse JSON
-      const cleaned = cleanJSON(content);
-      const parsed = JSON.parse(cleaned);
+    // 4. EXECUTE WITH FALLBACKS
+    const fallbackChain = [preferredModel, 'groq', 'gemini-flash', 'mistral'];
+    const uniqueChain = [...new Set(fallbackChain.filter(m => MODELS[m]))];
 
-      // Validate the response
-      validateResponse(parsed);
-
-      console.log("✅ Perfect! Generated your " + (parsed.type === 'chat' ? 'answer' : 'code'));
-      return JSON.stringify(parsed);
-
-    } catch (parseError) {
-      console.warn("⚠️ Groq messed up the format, using my backup solution...");
-      return JSON.stringify(generateFallback(userPrompt));
+    for (const modelId of uniqueChain) {
+        const config = MODELS[modelId];
+        try {
+            const result = await callAI(config.provider, config.id, finalPrompt, systemPrompt);
+            return processAIResponse(result);
+        } catch (error) {
+            console.error(`❌ ${modelId} failed:`, error.message);
+        }
     }
 
-  } catch (error) {
-    console.error("❌ Groq error:", error.message);
-    console.log("🔄 Don't worry, using backup solution...");
-    return JSON.stringify(generateFallback(userPrompt));
-  }
-}
-
-/* ================= MAIN FUNCTION ================= */
-
-async function generateGeminiResult(userPrompt) {
-  try {
-    const analysis = analyzePrompt(userPrompt);
-    const enhancedPrompt = buildPrompt(userPrompt, analysis);
-
-    console.log(`\n🤖 [Gemini] Hey! I got your request...`);
-    
-    // For Gemini, we pass the system instruction during initialization
-    // So we just send the user prompt here
-    const result = await model.generateContent(enhancedPrompt);
-    const response = await result.response;
-    const text = response.text();
-
-    if (!text) {
-        throw new Error("Empty response from Gemini");
-    }
-
-    try {
-        const cleaned = cleanJSON(text);
-        const parsed = JSON.parse(cleaned);
-        validateResponse(parsed);
-        console.log("✅ Perfect! Gemini generated your response");
-        return JSON.stringify(parsed);
-    } catch (parseError) {
-        console.warn("⚠️ Gemini response parsing failed, falling back...");
-        return JSON.stringify(generateFallback(userPrompt));
-    }
-
-  } catch (error) {
-    console.error("❌ Gemini error:", error.message);
-    return JSON.stringify(generateFallback(userPrompt));
-  }
-}
-
-export async function generateResult(userPrompt, modelType = 'groq') {
-  // Route to appropriate model
-  if (modelType === 'gemini') {
-    return generateGeminiResult(userPrompt);
-  }
-
-  // Default to Groq (removed Ollama/Llama)
-  return generateResultWithGroq(userPrompt);
-}
-
-/* ================= USAGE EXAMPLE ================= */
-
-// Test the function
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const testPrompts = [
-    // Chat requests
-    "hello",
-    "hi there",
-    "what is recursion",
-    "explain machine learning",
-    
-    // Express/Framework requests
-    "create an express server",
-    "make a rest api with express",
-    "build express server with routes",
-    
-    // Code requests with language at end
-    "count digits in c++",
-    "solve this problem in python",
-    "factorial using java",
-    
-    // Problem statements
-    "You are given an integer n. Return the number of digits in c++",
-    
-    // Regular code requests
-    "python me calculator banao",
-    "create a sorting algorithm in java"
-  ];
-
-  console.log("\n" + "=".repeat(60));
-  console.log("TESTING OPTIMIZED AI GENERATOR");
-  console.log("=".repeat(60));
-
-  for (const prompt of testPrompts) {
-    console.log(`\n📝 Prompt: "${prompt}"`);
-    
-    generateResult(prompt).then(result => {
-      const parsed = JSON.parse(result);
-      const analysis = analyzePrompt(prompt);
-      console.log(`✅ Type: ${parsed.type}${parsed.type === 'code' ? ' (' + analysis.language + ')' : ''}`);
-      if (parsed.type === 'chat') {
-        console.log(`💬 Message: ${parsed.message.slice(0, 50)}...`);
-      } else {
-        console.log(`📁 Files: ${Object.keys(parsed.files).join(', ')}`);
-      }
-    }).catch(err => {
-      console.error(`❌ Error: ${err.message}`);
-    });
-  }
-}
+    return JSON.stringify({ type: 'chat', message: "⚠️ My brain is a bit overloaded. Can you try that again?" });
+};
