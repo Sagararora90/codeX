@@ -11,6 +11,7 @@ import {
 } from "../config/socket";
 import Markdown from "markdown-to-jsx";
 import hljs from "highlight.js";
+import Editor from "@monaco-editor/react";
 import { getWebContainer } from "../config/webContainer";
 
 function SyntaxHighlightedCode(props) {
@@ -270,8 +271,48 @@ const Project = () => {
   const [isAiTyping, setIsAiTyping] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [terminalOutput, setTerminalOutput] = useState([]);
+
   const [currentSessionId, setCurrentSessionId] = useState(null);
-  const [aiModel, setAiModel] = useState(localStorage.getItem('aiModel') || 'groq');
+  
+  // Custom AI Config Manager
+  const [aiConfigs, setAiConfigs] = useState(() => JSON.parse(localStorage.getItem('aiConfigs') || '[]'));
+  const [activeModel, setActiveModel] = useState(localStorage.getItem('activeModel') || '');
+  
+  // New config form state
+  const [newConfigProvider, setNewConfigProvider] = useState('groq');
+  const [newConfigKey, setNewConfigKey] = useState('');
+  const [newConfigModels, setNewConfigModels] = useState('');
+
+  const handleAddAiConfig = () => {
+    if (!newConfigKey.trim() || !newConfigModels.trim()) return;
+    const modelsArray = newConfigModels.split(',').map(m => m.trim()).filter(Boolean);
+    const newConfig = { provider: newConfigProvider, apiKey: newConfigKey, models: modelsArray };
+    const updated = [...aiConfigs, newConfig];
+    setAiConfigs(updated);
+    localStorage.setItem('aiConfigs', JSON.stringify(updated));
+    if (!activeModel && modelsArray.length > 0) {
+      setActiveModel(modelsArray[0]);
+      localStorage.setItem('activeModel', modelsArray[0]);
+    }
+    setNewConfigKey('');
+    setNewConfigModels('');
+  };
+  
+  const handleRemoveAiConfig = (index) => {
+    const updated = aiConfigs.filter((_, i) => i !== index);
+    setAiConfigs(updated);
+    localStorage.setItem('aiConfigs', JSON.stringify(updated));
+  };
+
+  const getActiveModelProvider = () => {
+    for (const config of aiConfigs) {
+      if (config.models.includes(activeModel)) {
+        return config;
+      }
+    }
+    return null;
+  };
+
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [editorFontSize, setEditorFontSize] = useState(() => parseInt(localStorage.getItem('editorFontSize')) || 14);
@@ -618,13 +659,18 @@ ${messageToSend.replace('@ai', '').trim()}`;
       }
     }
 
+
+    const activeConfig = getActiveModelProvider();
     const messageData = {
       message: messageToSend,
       sender: user,
       sessionId: targetSessionId,
-      modelType: aiModel,
+      modelType: activeModel,
+      provider: activeConfig ? activeConfig.provider : 'groq',
+      apiKey: activeConfig ? activeConfig.apiKey : '',
       timestamp: Date.now()
     };
+
 
     try {
       sendMessage("typing-stop", { sender: user });
@@ -904,34 +950,15 @@ ${messageToSend.replace('@ai', '').trim()}`;
         const parsed = JSON.parse(message);
         
         if (parsed.type === 'fileTree' && parsed.files) {
-          const fileNames = Object.keys(parsed.files);
-          const isTasksOnly = fileNames.length === 1 && fileNames[0] === 'TASKS.md';
+          const fileNames = Object.keys(parsed.files).filter(f => f !== 'TASKS.md');
+          const allFileNames = Object.keys(parsed.files);
           
-          if (isTasksOnly) {
-              return (
-                <div className={`p-4 rounded-lg flex flex-col gap-3 ${appTheme === 'dark' ? 'bg-[#1e293b]' : 'bg-blue-50'} border border-blue-500/30 shadow-lg`}>
-                  <div className="flex items-center gap-2 text-blue-400 font-bold text-xs uppercase tracking-widest">
-                    <i className="ri-draft-line"></i>
-                    Antigravity Implementation Plan
-                  </div>
-                  <div className="text-[13px] text-gray-300 leading-relaxed overflow-auto max-h-[300px] prose prose-invert font-mono bg-black/20 p-3 rounded">
-                    <Markdown children={parsed.files['TASKS.md'].file.contents} />
-                  </div>
-                  <div className="flex items-center gap-2 pt-2">
-                    <button 
-                        onClick={() => { send("proceed"); }}
-                        className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded transition-all flex items-center gap-2"
-                    >
-                        <i className="ri-play-fill"></i>
-                        Confirm & Proceed
-                    </button>
-                    <span className="text-[10px] text-gray-500 italic">Phase: Planning to Execution</span>
-                  </div>
-                </div>
-              );
+          if (allFileNames.length === 0) {
+            content = "No files were generated. Try describing what you want to build more specifically.";
+          } else {
+            const displayNames = fileNames.length > 0 ? fileNames : allFileNames;
+            content = `✅ Generated ${displayNames.length} file${displayNames.length > 1 ? 's' : ''}:\n\n${displayNames.map(f => `- \`${f}\``).join('\n')}\n\nFiles have been added to the file tree. Click any file to view and edit it.`;
           }
-          
-          content = `✅ Generated ${fileNames.length} file${fileNames.length > 1 ? 's' : ''}:\n\n${fileNames.map(f => `- \`${f}\``).join('\n')}\n\nFiles have been added to the file tree on the right. You can click on any file to view and edit it.`;
         } else if (parsed.type === 'plan') {
           return (
             <div className={`p-4 rounded-lg flex flex-col gap-3 ${appTheme === 'dark' ? 'bg-[#252526]' : 'bg-gray-50'} border ${colors.border}`}>
@@ -959,55 +986,9 @@ ${messageToSend.replace('@ai', '').trim()}`;
             </div>
           );
         } else if (parsed.type === 'chat') {
-          content = parsed.message || message;
-          
-          if (content.includes('FILES_REQUIRED:')) {
-              const filesText = content.split('FILES_REQUIRED:')[1];
-              // Extract anything that looks like a filename (e.g. index.html, main.js, app.py)
-              const files = filesText.match(/[\w-]+\.\w+/g) || [];
-              
-              if (files.length > 0) {
-                  return (
-                    <div className={`p-4 rounded-lg flex flex-col gap-3 ${appTheme === 'dark' ? 'bg-[#1e293b]' : 'bg-blue-50'} border border-blue-500/30 shadow-lg`}>
-                        <div className="flex items-center gap-2 text-blue-400 font-bold text-xs uppercase tracking-widest">
-                            <i className="ri-lock-unlock-line"></i>
-                            Permission Gate: File Creation
-                        </div>
-                        <div className="text-sm text-gray-300">
-                            The AI architect needs to create the following files to proceed:
-                        </div>
-                        <div className="flex flex-wrap gap-2 py-1">
-                            {files.map(f => (
-                                <span key={f} className="px-2 py-0.5 bg-blue-500/20 border border-blue-500/30 rounded text-blue-300 text-xs font-mono">
-                                    {f}
-                                </span>
-                            ))}
-                        </div>
-                        <div className="flex items-center gap-2 pt-2">
-                            <button 
-                                onClick={() => { 
-                                    const bootstrapMsg = `MODE: BOOTSTRAP\r\nFILES: ${files.join(', ')}`;
-                                    send(bootstrapMsg);
-                                }}
-                                className="px-4 py-1.5 bg-green-600 hover:bg-green-500 text-white text-xs font-semibold rounded transition-all flex items-center gap-2"
-                            >
-                                <i className="ri-checkbox-circle-line"></i>
-                                Confirm & Create Files
-                            </button>
-                        </div>
-                    </div>
-                  );
-              }
-          }
+          content = parsed.message || parsed.text || message;
         } else {
           content = parsed.text || parsed.message || message;
-          // If the parsed object itself contains code-like text, allow raw code rendering
-          if (typeof content === 'string') {
-              const trimmed = content.trim();
-              isRawCode = /^(const|function|class|import|export|let|var|if|for|while|return|async|await)\b/.test(trimmed) || 
-                         (trimmed.includes('{') && trimmed.includes('}')) ||
-                         (trimmed.includes(';') && trimmed.length > 10);
-          }
         }
       } else {
         // Simple heuristic for "Is this raw code?"
@@ -1226,21 +1207,15 @@ ${messageToSend.replace('@ai', '').trim()}`;
 
         if (parsedMessage.type === 'fileTree') {
              processFileTree(parsedMessage.files);
-             const fileNames = Object.keys(parsedMessage.files || {});
-             const isTasksOnly = fileNames.length === 1 && fileNames[0] === 'TASKS.md';
-             
-             if (isTasksOnly) {
-                 // Preserve TASKS.md for the special UI renderer
-                 messageToStore.message = messageContent;
-             } else {
-                 messageToStore.message = JSON.stringify({ 
-                     type: 'fileTree',
-                     text: fileNames.length === 1 
-                         ? `Generated ${fileNames[0]}` 
-                         : `Generated ${fileNames.join(', ')}`,
-                     files: parsedMessage.files // Keep files for rendering if needed
-                 });
-             }
+             const fileNames = Object.keys(parsedMessage.files || {}).filter(f => f !== 'TASKS.md');
+             const displayNames = fileNames.length > 0 ? fileNames : Object.keys(parsedMessage.files || {});
+             messageToStore.message = JSON.stringify({ 
+                 type: 'fileTree',
+                 text: displayNames.length === 1 
+                     ? `Generated ${displayNames[0]}` 
+                     : `Generated ${displayNames.length} files: ${displayNames.join(', ')}`,
+                 files: parsedMessage.files
+             });
         } 
         else if (parsedMessage.type === 'chat') {
              messageToStore.message = JSON.stringify({ type: 'chat', text: parsedMessage.message });
@@ -1351,15 +1326,24 @@ ${messageToSend.replace('@ai', '').trim()}`;
       });
   }
 
-  function scrollToBottom() {
+  function scrollToBottom(force = false) {
     if (messageBox.current) {
-      messageBox.current.scrollTop = messageBox.current.scrollHeight;
+      const { scrollTop, scrollHeight, clientHeight } = messageBox.current;
+      // Scroll to bottom if forced, or if user is within 150px of the bottom
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 150;
+      if (force || isNearBottom) {
+        messageBox.current.scrollTop = scrollHeight;
+      }
     }
   }
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, typingUsers, isAiTyping, isChatOpen, isTeamChatOpen]);
+  }, [messages, typingUsers, isAiTyping]);
+
+  useEffect(() => {
+    scrollToBottom(true);
+  }, [isChatOpen, isTeamChatOpen]);
 
   if (!project) {
     return (
@@ -1670,6 +1654,39 @@ ${messageToSend.replace('@ai', '').trim()}`;
                       <span className="text-[11px] truncate">{t.name}</span>
                     </button>
                   ))}
+                </div>
+              </div>
+
+                            <div className="h-px bg-white/5 my-2 mx-4"></div>
+
+              {/* AI Key Manager */}
+              <div className="px-4 py-2">
+                <label className="text-[10px] text-gray-500 uppercase font-bold mb-2 block">AI Models & Keys</label>
+                
+                {aiConfigs.length > 0 && (
+                  <div className="mb-3 space-y-2">
+                    {aiConfigs.map((cfg, idx) => (
+                      <div key={idx} className="bg-white/5 p-2 rounded border border-white/10 relative group">
+                        <div className="text-[10px] font-bold text-gray-300 capitalize">{cfg.provider}</div>
+                        <div className="text-[9px] text-gray-500 mb-1">{cfg.models.join(', ')}</div>
+                        <div className="text-[9px] font-mono text-gray-600 truncate">{cfg.apiKey.replace(/./g, '•').substring(0, 15)}</div>
+                        <button onClick={() => handleRemoveAiConfig(idx)} className="absolute top-2 right-2 text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <i className="ri-delete-bin-line text-xs"></i>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="bg-[#181818] p-2 rounded-lg border border-white/5 space-y-2">
+                  <select value={newConfigProvider} onChange={(e) => setNewConfigProvider(e.target.value)} className="w-full bg-[#2a2a2a] border border-transparent p-1.5 rounded text-white text-[10px] outline-none">
+                    <option value="groq">Groq</option>
+                    <option value="gemini">Gemini</option>
+                    <option value="hf">Hugging Face</option>
+                  </select>
+                  <input type="text" placeholder="Models (comma separated, e.g. llama-3.3-70b, mixtral)" value={newConfigModels} onChange={(e) => setNewConfigModels(e.target.value)} className="w-full bg-[#2a2a2a] border border-transparent p-1.5 rounded text-white text-[10px] outline-none placeholder:text-gray-600" />
+                  <input type="password" placeholder="API Key" value={newConfigKey} onChange={(e) => setNewConfigKey(e.target.value)} className="w-full bg-[#2a2a2a] border border-transparent p-1.5 rounded text-white text-[10px] outline-none placeholder:text-gray-600" />
+                  <button onClick={handleAddAiConfig} className="w-full py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded transition-colors">Add Config</button>
                 </div>
               </div>
 
@@ -2291,32 +2308,41 @@ ${messageToSend.replace('@ai', '').trim()}`;
             }}
           >
             {fileTree[currentFile] ? (
-              <pre className="hljs h-full">
-                <code
-                  className="hljs h-full outline-none block p-4 text-sm leading-6"
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => {
-                    const updatedContent = e.target.innerText;
+              <div className="h-full w-full">
+                <Editor
+                  height="100%"
+                  language={
+                      currentFile.split('.').pop() === 'css' ? 'css' : 
+                      currentFile.split('.').pop() === 'html' ? 'html' : 
+                      currentFile.split('.').pop() === 'json' ? 'json' : 
+                      (currentFile.split('.').pop() === 'ts' || currentFile.split('.').pop() === 'tsx') ? 'typescript' :
+                      'javascript'
+                  }
+                  theme={editorThemePreference === 'vs-light' ? 'light' : 'vs-dark'}
+                  value={fileTree[currentFile].file.contents}
+                  onChange={(value) => {
                     const ft = {
                       ...fileTree,
-                      [currentFile]: { file: { contents: updatedContent } },
+                      [currentFile]: { file: { contents: value || "" } },
                     };
                     setFileTree(ft);
-                    saveFileTree(ft);
+                    
+                    clearTimeout(window.saveTimeout);
+                    window.saveTimeout = setTimeout(() => {
+                        saveFileTree(ft);
+                    }, 1000);
                   }}
-                  dangerouslySetInnerHTML={{
-                    __html: hljs.highlight("javascript", fileTree[currentFile].file.contents).value,
-                  }}
-                   style={{ 
-                    whiteSpace: editorWordWrap ? "pre-wrap" : "pre", 
-                    paddingBottom: "10rem",
-                    fontSize: `${editorFontSize}px`,
-                    fontFamily: "'Fira Code', 'Cascadia Code', Consolas, monospace",
-                    backgroundColor: 'transparent'
+                  options={{
+                    fontSize: editorFontSize,
+                    wordWrap: editorWordWrap ? "on" : "off",
+                    minimap: { enabled: false },
+                    padding: { top: 16 },
+                    formatOnPaste: true,
+                    autoClosingBrackets: "always",
+                    autoIndent: "full"
                   }}
                 />
-              </pre>
+              </div>
             ) : (
               <div className={`h-full flex items-center justify-center ${colors.secondaryText}`}>
                 <div className="text-center">
@@ -2602,47 +2628,31 @@ ${messageToSend.replace('@ai', '').trim()}`;
                         className={`flex items-center gap-1 px-2 py-0.5 text-[11px] ${colors.secondaryText} hover:text-white bg-white/10 rounded transition-colors`}
                       >
                         <i className="ri-arrow-up-s-line text-sm"></i>
-                        <i className={`${
-                          aiModel === 'groq' || aiModel === 'groq-8b' ? 'ri-flashlight-fill text-purple-400' : 
-                          aiModel.startsWith('gemini') ? 'ri-gemini-fill text-orange-400' :
-                          'ri-brain-line text-blue-400'
-                        } text-xs`}></i>
-                        <span className="max-w-[80px] truncate">
-                          {aiModel === 'groq' ? 'Groq 70B' : 
-                           aiModel === 'deepseek-r1' ? 'DeepSeek R1' :
-                           aiModel === 'gemini-2-flash' ? 'Gemini 3 Flash' :
-                           aiModel.charAt(0).toUpperCase() + aiModel.slice(1)}
-                        </span>
+                        <span className="max-w-[80px] truncate">{activeModel || 'Select Model'}</span>
                       </button>
 
                       {isModelDropdownOpen && (
                         <div className={`absolute bottom-full left-0 mb-1 ${colors.sidebar} rounded border ${colors.border} overflow-hidden z-20 min-w-[160px] shadow-2xl`}>
-                          {[
-                            { id: 'groq', name: 'Groq OSS 70B', icon: 'ri-flashlight-fill', color: 'text-purple-400' },
-                            { id: 'deepseek-r1', name: 'DeepSeek R1', icon: 'ri-brain-line', color: 'text-blue-400' },
-                            { id: 'gemini-2-flash', name: 'Gemini 3 Flash', icon: 'ri-gemini-fill', color: 'text-orange-400' },
-                            { id: 'mistral', name: 'Mistral 7B', icon: 'ri-cpu-line', color: 'text-green-400' },
-                            { id: 'qwen-2.5', name: 'Qwen 2.5', icon: 'ri-robot-line', color: 'text-red-400' },
-                            { id: 'gemma-2', name: 'Gemma 2', icon: 'ri-google-fill', color: 'text-blue-500' }
-                          ].map(m => (
-                            <button
-                              key={m.id}
-                              onClick={() => { 
-                                setAiModel(m.id); 
-                                setIsModelDropdownOpen(false); 
-                                localStorage.setItem('aiModel', m.id); 
-                              }}
-                              className={`w-full text-left px-3 py-2 text-[11px] flex items-center justify-between ${
-                                aiModel === m.id ? 'bg-[#0078d4] text-white' : `hover:${colors.menuHover} ${colors.text}`
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <i className={`${m.icon} ${aiModel === m.id ? 'text-white' : m.color} text-xs`}></i>
-                                <span>{m.name}</span>
-                              </div>
-                              {aiModel === m.id && <i className="ri-check-line"></i>}
-                            </button>
-                          ))}
+                          {aiConfigs.length === 0 ? (
+                            <div className="p-3 text-[10px] text-gray-500 text-center">Add models in Settings (⚙️)</div>
+                          ) : (
+                            aiConfigs.flatMap(cfg => cfg.models).map((m) => (
+                              <button
+                                key={m}
+                                onClick={() => { 
+                                  setActiveModel(m); 
+                                  setIsModelDropdownOpen(false); 
+                                  localStorage.setItem('activeModel', m); 
+                                }}
+                                className={`w-full text-left px-3 py-2 text-[11px] flex items-center justify-between ${
+                                  activeModel === m ? 'bg-[#0078d4] text-white' : `hover:${colors.menuHover} ${colors.text}`
+                                }`}
+                              >
+                                <span>{m}</span>
+                                {activeModel === m && <i className="ri-check-line"></i>}
+                              </button>
+                            ))
+                          )}
                         </div>
                       )}
                     </div>

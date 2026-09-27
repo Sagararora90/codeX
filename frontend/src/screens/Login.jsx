@@ -9,6 +9,7 @@ const Login = () => {
     const [ email, setEmail ] = useState('')
     const [ password, setPassword ] = useState('')
     const [ error, setError ] = useState('')
+    const [ isLoading, setIsLoading ] = useState(false)
 
     const { setUser } = useContext(UserContext)
 
@@ -18,6 +19,7 @@ const Login = () => {
 
         e.preventDefault()
         setError('') // Clear any previous errors
+        setIsLoading(true)
 
         axios.post('/users/login', {
             email,
@@ -31,9 +33,10 @@ const Login = () => {
 
             navigate('/dashboard')
         }).catch((err) => {
-            console.log(err.response.data)
+            console.log(err.response?.data)
             const errorMessage = err.response?.data?.message || err.response?.data?.error || 'Invalid credentials. Please try again.'
             setError(errorMessage)
+            setIsLoading(false)
         })
     }
 
@@ -152,9 +155,17 @@ const Login = () => {
 
                             <button
                                 type="submit"
-                                className="w-full py-4 rounded-2xl bg-white text-black text-sm font-black hover:bg-gray-200 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-[0_20px_40px_-10px_rgba(255,255,255,0.1)]"
+                                disabled={isLoading}
+                                className={`w-full py-4 rounded-2xl bg-white text-black text-sm font-black hover:bg-gray-200 transition-all shadow-[0_20px_40px_-10px_rgba(255,255,255,0.1)] ${isLoading ? 'opacity-70 cursor-not-allowed' : 'hover:scale-[1.02] active:scale-[0.98]'}`}
                             >
-                                Sign In
+                                {isLoading ? (
+                                    <div className="flex items-center justify-center gap-2">
+                                        <i className="ri-loader-4-line animate-spin text-lg"></i>
+                                        <span>Signing In...</span>
+                                    </div>
+                                ) : (
+                                    "Sign In"
+                                )}
                             </button>
                         </form>
 

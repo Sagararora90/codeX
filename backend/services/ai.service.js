@@ -1,26 +1,6 @@
 import fetch from "node-fetch";
 import Groq from "groq-sdk";
 
-// Initialize Groq client
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY || ""
-});
-
-// Provider Configurations
-const MODELS = {
-  // Groq Models (Primary Architecture & Execution)
-  'groq': { provider: 'groq', id: 'llama-3.3-70b-versatile' },
-  'groq-8b': { provider: 'groq', id: 'llama-3.1-8b-instant' },
-  
-  // Gemini Models (Direct Fetch - Stable v1)
-  'gemini-pro': { provider: 'gemini', id: 'gemini-1.5-pro' },
-  'gemini-flash': { provider: 'gemini', id: 'gemini-1.5-flash' },
-  
-  // Hugging Face Models (Fallback Only - Text Generation Path)
-  'mistral': { provider: 'hf', id: 'mistralai/Mistral-7B-Instruct-v0.3' },
-  'qwen-2.5': { provider: 'hf', id: 'Qwen/Qwen2.5-7B-Instruct' }
-};
-
 /* ================= THE ANTIGRAVITY INTENT ROUTER ================= */
 
 const INTENT_ROUTER_PROMPT = `
@@ -28,107 +8,87 @@ You are an intent classifier for a coding IDE assistant.
 
 Possible intents:
 1. CHAT        (greeting, casual message, question)
-2. PLAN        (create/build/make something new)
-3. PROCEED     (proceed, continue, next step)
-4. MODIFY_PLAN (change assumptions, tasks, stack)
-5. FIX         (error, bug, not working)
-6. UI_CHANGE   (fix UI, improve UX)
-7. UNKNOWN
+2. BUILD       (create/build/make something new, generate code)
+3. FIX         (error, bug, not working)
+4. UI_CHANGE   (fix UI, improve UX)
+5. UNKNOWN
 
 RULES:
 - Do NOT write code. Output ONLY one word from the intent list.
 - If casual/unclear, choose CHAT.
+- If user says "proceed", "continue", "next", "go ahead" => BUILD
+- If user says "make", "create", "build", "generate", "write" => BUILD
 `;
 
 const CHAT_MODE_PROMPT = `
-You are a conversational assistant inside a coding IDE.
-RULES: No tasks, no files, no code. Respond naturally and briefly.
+You are a conversational assistant inside a coding IDE called CodeX.
+RULES: No tasks, no files, no code. Respond naturally and briefly. Be helpful and friendly.
 `;
 
-const PLANNING_PROMPT = `
-You are an AI architect. 
+const AGENTIC_BUILD_PROMPT = `
+You are an autonomous AI coding agent inside a professional IDE called CodeX.
 
-MODE: PLANNING
+MODE: AUTONOMOUS BUILD
+
+You receive a user request and the current project files. You MUST generate ALL the necessary code files in a single response.
 
 STRICT RULES:
-- Do NOT create application files.
-- Do NOT write code.
-- Do NOT assume language unless user specified.
-- Output MUST be a valid JSON object. All newlines inside the "contents" string MUST be properly escaped as \\n.
-- If the user asks for a React component or React app, you MUST plan a full Vite/React project architecture (including package.json, index.html, index.jsx, and App.jsx) rather than a standalone component, so they can run it natively.
+- You MUST output a SINGLE valid JSON object with ALL implementation files.
+- Generate COMPLETE, PRODUCTION-READY code. No placeholders, no TODOs, no "add your code here".
+- Every file must be fully implemented and functional.
+- Include ALL necessary files (HTML, CSS, JS, config files, etc.)
+- All newlines inside "contents" strings MUST be escaped as \\n
+- All quotes inside "contents" strings MUST be escaped as \\"
+- Do NOT wrap output in \`\`\`json markdown blocks.
+- Do NOT explain anything before or after the JSON.
+- Do NOT output a TASKS.md - just output the actual code files.
+- Keep the response as compact as possible to avoid truncation.
 
-TASKS.md FORMAT:
-# Goal
-<single sentence>
+OUTPUT FORMAT (strict JSON, nothing else):
+{"type":"fileTree","files":{"index.html":{"file":{"contents":"<!DOCTYPE html>..."}},"style.css":{"file":{"contents":"body{...}"}},"script.js":{"file":{"contents":"console.log('hello');"}}}}
 
-# Stack
-Language: <locked or unknown>
-Framework: <if any>
-
-# Tasks
-- [ ] Task 1
-- [ ] Task 2
-- [ ] Task 3
-
-# Confirmation
-Ask the user to review and confirm.
-
-OUTPUT FORMAT (Must be valid JSON, perfectly escaped):
-{ "type": "fileTree", "files": { "TASKS.md": { "file": { "contents": "# Goal\\nBuild it\\n\\n# Tasks\\n- [ ] Task 1" } } } }
+CRITICAL: Output ONLY the JSON object. No text before or after it. Keep file contents concise but complete.
 `;
 
-const EXECUTION_PROMPT = `
-You are an AI execution agent inside a coding IDE.
+const FIX_PROMPT = `
+You are an AI debugging agent inside a coding IDE called CodeX.
 
-MODE: EXECUTION
+MODE: FIX/MODIFY
 
-CURRENT TASK:
-{{CURRENT_TASK}}
+You receive the user's fix request and the current project files. You must output the corrected files.
 
-RULES (STRICT):
-- You are NOT allowed to return examples, schemas, or sample JSON.
-- You MUST fully implement the CURRENT TASK in the relevant files.
-- You MUST include the updated code for all modified files in the output.
-- You MUST update TASKS.md in the fileTree, marking the current task as [x].
-- Output MUST be a single, valid JSON fileTree containing TASKS.md AND the fully implemented source code files.
-- All newlines inside the "contents" string MUST be properly escaped as \\n. 
-- Do NOT output \`\`\`json markdown blocks, just the raw JSON object.
-- Do NOT explain. Do NOT invent APIs. Do NOT replan.
-
-If this task requires new files that don't exist yet, respond ONLY with:
-FILES_REQUIRED: [file1, file2]
-
-Otherwise, output the full implementation strictly in this JSON format:
-{ "type": "fileTree", "files": { "TASKS.md": { "file": { "contents": "... updated tasks list ..." } }, "App.jsx": { "file": { "contents": "... FULL new file content ..." } } } }
-`;
-
-const BOOTSTRAP_PROMPT = `
-You are an AI file bootstrapper. 
-
-MODE: BOOTSTRAP
-
-RULES:
-- Create the approved file(s) named in the prompt.
-- File must be FULLY IMPLEMENTED based on the project context. Do not use placeholders or 'minimal' content.
-- All newlines inside the "contents" string MUST be properly escaped as \\n.
-- Do NOT explain.
-- Output MUST be a valid JSON fileTree.
+STRICT RULES:
+- Output a valid JSON object containing ONLY the files that need changes.
+- Each file must contain the COMPLETE updated content (not just the diff).
+- All newlines inside "contents" strings MUST be escaped as \\n
+- All quotes inside "contents" strings MUST be escaped as \\"
+- Do NOT wrap in markdown. Do NOT explain.
+- Output ONLY the JSON.
 
 OUTPUT FORMAT:
-{ "type": "fileTree", "files": { "filename.js": { "file": { "contents": "... FULL code ..." } } } }
+{"type":"fileTree","files":{"filename.js":{"file":{"contents":"...full corrected file..."}}}}
 `;
 
 /* ================= PROVIDER LOGIC ================= */
 
-async function callAI(provider, modelId, prompt, forceSystem = null) {
+async function callAI(provider, modelId, prompt, forceSystem = null, apiKey = null) {
+    if (!apiKey) throw new Error('API Key is missing. Please configure your API key in the editor settings.');
     console.log(`📡 Calling ${provider} for model ${modelId}...`);
     
     if (provider === 'groq') {
-        const messages = forceSystem ? [{ role: "system", content: forceSystem }, { role: "user", content: prompt }] : [{ role: "user", content: prompt }];
-        const chatCompletion = await groq.chat.completions.create({ messages, model: modelId });
+        const messages = forceSystem 
+            ? [{ role: "system", content: forceSystem }, { role: "user", content: prompt }] 
+            : [{ role: "user", content: prompt }];
+        const groq = new Groq({ apiKey, dangerouslyAllowBrowser: false });
+        const chatCompletion = await groq.chat.completions.create({ 
+            messages, 
+            model: modelId,
+            max_tokens: 8192,
+            temperature: 0.1
+        });
         return chatCompletion.choices[0].message.content;
     } else if (provider === 'gemini') {
-        const url = `https://generativelanguage.googleapis.com/v1/models/${modelId}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+        const url = `https://generativelanguage.googleapis.com/v1/models/${modelId}:generateContent?key=${apiKey}`;
         const finalPrompt = forceSystem ? `SYSTEM_INSTRUCTION:\n${forceSystem}\n\nUSER_PROMPT:\n${prompt}` : prompt;
         
         const response = await fetch(url, {
@@ -136,7 +96,7 @@ async function callAI(provider, modelId, prompt, forceSystem = null) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 contents: [{ parts: [{ text: finalPrompt }] }],
-                generationConfig: { temperature: 0.1, maxOutputTokens: 4096 }
+                generationConfig: { temperature: 0.1, maxOutputTokens: 8192 }
             })
         });
         
@@ -151,10 +111,10 @@ async function callAI(provider, modelId, prompt, forceSystem = null) {
         
         const response = await fetch(url, {
             method: "POST",
-            headers: { "Authorization": `Bearer ${process.env.HF_TOKEN}`, "Content-Type": "application/json" },
+            headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
             body: JSON.stringify({
                 inputs: finalPrompt,
-                parameters: { max_new_tokens: 2048, temperature: 0.1 }
+                parameters: { max_new_tokens: 4096, temperature: 0.1 }
             })
         });
         const data = await response.json();
@@ -168,55 +128,99 @@ async function callAI(provider, modelId, prompt, forceSystem = null) {
 function processAIResponse(content) {
     if (!content) return "";
     const trimmed = content.trim();
-    if (trimmed.includes('{') && trimmed.includes('}')) {
-        try {
-            const cleaned = cleanJSON(content);
-            const parsed = JSON.parse(cleaned);
-            return JSON.stringify(parsed);
-        } catch (e) {
-            const startBrace = trimmed.indexOf('{');
-            const endBrace = trimmed.lastIndexOf('}');
-            if (startBrace !== -1 && endBrace !== -1) {
-                let candidate = trimmed.slice(startBrace, endBrace + 1);
-                while (candidate.length > 2) {
-                    try { return JSON.stringify(JSON.parse(candidate)); } 
-                    catch {
-                        const nextBrace = candidate.lastIndexOf('}', candidate.length - 2);
-                        if (nextBrace === -1) break;
-                        candidate = candidate.slice(0, nextBrace + 1);
+    
+    // If it doesn't look like JSON at all, wrap it as chat
+    if (!trimmed.includes('{')) {
+        return JSON.stringify({ type: "chat", message: trimmed });
+    }
+    
+    // Try direct parse first
+    try {
+        const cleaned = cleanJSON(content);
+        const parsed = JSON.parse(cleaned);
+        return JSON.stringify(parsed);
+    } catch (e) {
+        // JSON is probably truncated. Try to repair it.
+        let candidate = cleanJSON(content);
+        
+        // Strategy 1: Try closing open strings and brackets
+        // Remove trailing incomplete string value (cut off mid-string)
+        const lastQuoteIdx = candidate.lastIndexOf('"');
+        if (lastQuoteIdx > 0) {
+            const afterLastQuote = candidate.substring(lastQuoteIdx + 1).trim();
+            // If the content after the last quote doesn't look like valid JSON continuation
+            // it was probably cut off mid-string
+            if (afterLastQuote && !afterLastQuote.match(/^[,}\]:]/) ) {
+                // Truncated mid-string-value. Cut at last complete key-value
+                candidate = candidate.substring(0, lastQuoteIdx + 1);
+            }
+        }
+        
+        // Strategy 2: Try appending closing brackets
+        for (let closers of ['}}}}', '}}}', '}}', '}', '"}}}}', '"}}}"}}', '"}}}', '"}}', '"}']) {
+            try {
+                const attempt = candidate + closers;
+                const parsed = JSON.parse(attempt);
+                if (parsed.type === 'fileTree' && parsed.files) {
+                    // Validate that at least one file has contents
+                    const files = Object.keys(parsed.files);
+                    if (files.length > 0) {
+                        // Remove any files with incomplete/empty contents
+                        for (const f of files) {
+                            if (!parsed.files[f]?.file?.contents) {
+                                delete parsed.files[f];
+                            }
+                        }
+                        if (Object.keys(parsed.files).length > 0) {
+                            console.log(`🔧 Repaired truncated JSON (${Object.keys(parsed.files).length} files recovered)`);
+                            return JSON.stringify(parsed);
+                        }
                     }
                 }
-            }
-            return JSON.stringify({ type: "chat", message: trimmed });
+                return JSON.stringify(parsed);
+            } catch (e2) {}
         }
+        
+        // Strategy 3: try stripping from end to find valid JSON
+        const startBrace = trimmed.indexOf('{');
+        const endBrace = trimmed.lastIndexOf('}');
+        if (startBrace !== -1 && endBrace !== -1 && endBrace > startBrace) {
+            let cand = trimmed.slice(startBrace, endBrace + 1);
+            for (let attempts = 0; attempts < 10 && cand.length > 2; attempts++) {
+                try { 
+                    return JSON.stringify(JSON.parse(cand)); 
+                } catch {
+                    const nextBrace = cand.lastIndexOf('}', cand.length - 2);
+                    if (nextBrace === -1) break;
+                    cand = cand.slice(0, nextBrace + 1);
+                }
+            }
+        }
+        
+        // All repair attempts failed - return as chat message
+        console.warn('⚠️ JSON repair failed, returning as chat message');
+        return JSON.stringify({ type: "chat", message: trimmed });
     }
-    return JSON.stringify({ type: "chat", message: trimmed });
 }
 
 function cleanJSON(content) {
     let cleaned = content.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+    // Remove any text before the first {
     const firstBrace = cleaned.indexOf('{');
     const lastBrace = cleaned.lastIndexOf('}');
     if (firstBrace !== -1 && lastBrace !== -1) {
         cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+    } else if (firstBrace !== -1) {
+        // No closing brace found (truncated) - take everything from first brace
+        cleaned = cleaned.slice(firstBrace);
     }
     return cleaned.trim();
 }
 
-/* ================= TASK PARSER ================= */
-
-function getNextTask(tasksContent) {
-    if (!tasksContent) return null;
-    const lines = tasksContent.split('\n');
-    const uncheckedRegex = /^\s*[-\*]\s*\[\s*\]/;
-    const unchecked = lines.find(line => uncheckedRegex.test(line));
-    return unchecked ? unchecked.replace(uncheckedRegex, '').trim() : null;
-}
-
 /* ================= THE BRAIN (MAIN ENTRY) ================= */
 
-export const generateResult = async (userInput, modelType, currentFileTree = {}) => {
-    // Extract the raw user message for the intent router (prevents confusing the classifier with massive context)
+export const generateResult = async (userInput, modelType, currentFileTree = {}, apiKey = null, provider = 'groq') => {
+    // Extract the raw user message for the intent router
     let extractedIntent = userInput;
     const intentMatch = userInput.match(/USER_INTENT:\s*([\s\S]*)/);
     if (intentMatch) {
@@ -226,77 +230,52 @@ export const generateResult = async (userInput, modelType, currentFileTree = {})
     // 1. CLASSIFY INTENT
     let intent = "CHAT";
     try {
-        const intentResult = await callAI('groq', 'llama-3.1-8b-instant', extractedIntent, INTENT_ROUTER_PROMPT);
+        const intentResult = await callAI(provider, modelType, extractedIntent, INTENT_ROUTER_PROMPT, apiKey);
         intent = intentResult.trim().toUpperCase().split('\n')[0].replace(/[^A-Z_]/g, '');
     } catch (e) {
         console.warn("Intent classification failed, defaulting to CHAT.");
     }
     console.log(`🎯 Intent Detected: ${intent}`);
 
-    // If frontend explicitly sets BOOTSTRAP, override intent
-    if (userInput.includes('MODE: BOOTSTRAP')) {
-        intent = "BOOTSTRAP";
+    // Normalize legacy intents
+    if (intent === 'PLAN' || intent === 'PROCEED' || intent === 'BOOTSTRAP') {
+        intent = 'BUILD';
     }
 
     // 2. CONTEXT PREPARATION
     let contextString = "";
-    Object.entries(currentFileTree).forEach(([path, data]) => {
-        if (data.file && data.file.contents && !path.includes('node_modules')) {
+    const fileEntries = Object.entries(currentFileTree);
+    fileEntries.forEach(([path, data]) => {
+        if (data.file && data.file.contents && !path.includes('node_modules') && path !== 'TASKS.md') {
             contextString += `--- FILE: ${path} ---\n${data.file.contents}\n`;
         }
     });
 
-    // 3. SELECT OPTIMAL MODE
+    // 3. SELECT MODE & EXECUTE
     let systemPrompt = "";
     let finalPrompt = userInput;
-    let preferredModel = 'groq';
 
     if (intent === "CHAT") {
         systemPrompt = CHAT_MODE_PROMPT;
-        preferredModel = 'groq-8b';
-    } else if (intent === "PLAN") {
-        systemPrompt = PLANNING_PROMPT;
-        finalPrompt = `USER_REQUEST: ${extractedIntent}\n\nEXISTING_FILES:\n${contextString}`;
-        preferredModel = 'gemini-pro';
-    } else if (intent === "BOOTSTRAP") {
-        systemPrompt = BOOTSTRAP_PROMPT;
-        finalPrompt = userInput;
-        preferredModel = 'groq';
-    } else if (intent === "PROCEED" || intent === "FIX" || intent === "UI_CHANGE") {
-        const tasksMd = currentFileTree['TASKS.md']?.file?.contents;
-        let currentTask = getNextTask(tasksMd);
-        
-        // If they just said "proceed" but there is no task, warn them.
-        if (intent === "PROCEED" && !currentTask) {
-            return JSON.stringify({ type: "chat", message: "No active plan or all tasks complete. Tell me what you'd like to build next, or use 'make [feature]' to create a new plan!" });
+    } else if (intent === "BUILD") {
+        systemPrompt = AGENTIC_BUILD_PROMPT;
+        finalPrompt = `USER REQUEST: ${extractedIntent}`;
+        if (contextString) {
+            finalPrompt += `\n\nEXISTING PROJECT FILES:\n${contextString}`;
         }
-        
-        // If they want a fix/UI change without a task list, we just act directly on their request.
-        if (!currentTask) {
-            currentTask = extractedIntent; // Treat their request as the "current task"
-        }
-        
-        systemPrompt = EXECUTION_PROMPT.replace('{{CURRENT_TASK}}', currentTask);
-        finalPrompt = `USER_INTENT: ${extractedIntent}\n\nPROJECT_FILES:\n${contextString}`;
-        preferredModel = 'groq';
+    } else if (intent === "FIX" || intent === "UI_CHANGE" || intent === "MODIFY_PLAN") {
+        systemPrompt = FIX_PROMPT;
+        finalPrompt = `USER REQUEST: ${extractedIntent}\n\nCURRENT PROJECT FILES:\n${contextString}`;
     } else {
         systemPrompt = CHAT_MODE_PROMPT;
-        preferredModel = 'groq-8b';
     }
 
-    // 4. EXECUTE WITH FALLBACKS
-    const fallbackChain = [preferredModel, 'groq', 'gemini-flash', 'mistral'];
-    const uniqueChain = [...new Set(fallbackChain.filter(m => MODELS[m]))];
-
-    for (const modelId of uniqueChain) {
-        const config = MODELS[modelId];
-        try {
-            const result = await callAI(config.provider, config.id, finalPrompt, systemPrompt);
-            return processAIResponse(result);
-        } catch (error) {
-            console.error(`❌ ${modelId} failed:`, error.message);
-        }
+    // 4. EXECUTE
+    try {
+        const result = await callAI(provider, modelType, finalPrompt, systemPrompt, apiKey);
+        return processAIResponse(result);
+    } catch (error) {
+        console.error(`❌ ${provider}:${modelType} failed:`, error.message);
+        return JSON.stringify({ type: 'chat', message: `⚠️ AI Error: ${error.message}` });
     }
-
-    return JSON.stringify({ type: 'chat', message: "⚠️ My brain is a bit overloaded. Can you try that again?" });
 };

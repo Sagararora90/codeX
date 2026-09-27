@@ -99,7 +99,7 @@ io.on('connection', socket => {
                     }
                 }
 
-                const result = await generateResult(prompt, modelType, currentFileTree);
+                const result = await generateResult(prompt, modelType, currentFileTree, data.apiKey, data.provider);
 
                 const aiMessage = {
                     message: result,
@@ -143,3 +143,5 @@ io.on('connection', socket => {
 server.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
+
+

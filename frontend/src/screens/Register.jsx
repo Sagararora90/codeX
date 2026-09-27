@@ -38,6 +38,7 @@ const Register = () => {
     const [ error, setError ] = useState('')
     const [ showPassword, setShowPassword ] = useState(false)
     const [ rememberMe, setRememberMe ] = useState(false)
+    const [ isLoading, setIsLoading ] = useState(false)
 
     // Focus states for hiding messages on blur
     const [ isUsernameFocused, setIsUsernameFocused ] = useState(false)
@@ -150,6 +151,7 @@ const Register = () => {
     const submitHandler = (e) => {
         e.preventDefault()
         setError('')
+        setIsLoading(true)
 
         axios.post('/users/register', {
             email,
@@ -166,6 +168,7 @@ const Register = () => {
             console.log(err.response?.data)
             const errorMessage = err.response?.data?.message || err.response?.data?.error || 'Registration failed. Please try again.'
             setError(errorMessage)
+            setIsLoading(false)
         })
     }
 
@@ -383,8 +386,19 @@ const Register = () => {
                                 </div>
                             )}
 
-                            <button type="submit" className="w-full py-4 rounded-xl bg-white text-black text-[11px] font-black uppercase tracking-[0.3em] hover:bg-gray-200 transition-all active:scale-[0.98] mt-4 shadow-xl shadow-white/5">
-                                Initialize
+                            <button 
+                                type="submit" 
+                                disabled={isLoading}
+                                className={`w-full py-4 rounded-xl bg-white text-black text-[11px] font-black uppercase tracking-[0.3em] hover:bg-gray-200 transition-all shadow-xl shadow-white/5 mt-4 ${isLoading ? 'opacity-70 cursor-not-allowed' : 'active:scale-[0.98]'}`}
+                            >
+                                {isLoading ? (
+                                    <div className="flex items-center justify-center gap-2">
+                                        <i className="ri-loader-4-line animate-spin text-lg"></i>
+                                        <span>INITIALIZING...</span>
+                                    </div>
+                                ) : (
+                                    "Initialize"
+                                )}
                             </button>
                         </form>
 
