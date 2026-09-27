@@ -46,4 +46,8 @@ router.delete('/delete', authMiddleware.authUser, userController.deleteUserContr
 
 router.put('/update-theme', authMiddleware.authUser, userController.updateThemeController);
 
+router.put('/ai-configs', authMiddleware.authUser, userController.updateAiConfigsController);
+
+router.get('/ai-configs', authMiddleware.authUser, userController.getAiConfigsController);
+
 export default router;

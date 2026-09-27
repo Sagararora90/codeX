@@ -39,6 +39,14 @@ const userSchema = new mongoose.Schema({
             // Generate default username from email if not provided
             return this.email ? this.email.split('@')[0] : 'user';
         }
+    },
+    aiConfigs: {
+        type: [{
+            provider: { type: String, required: true },
+            apiKey: { type: String, required: true },
+            models: [{ type: String }]
+        }],
+        default: []
     }
 })
 

@@ -283,13 +283,37 @@ const Project = () => {
   const [newConfigKey, setNewConfigKey] = useState('');
   const [newConfigModels, setNewConfigModels] = useState('');
 
+  // Load AI configs from backend on mount
+  useEffect(() => {
+    axios.get('/users/ai-configs')
+      .then(res => {
+        const serverConfigs = res.data.aiConfigs || [];
+        if (serverConfigs.length > 0) {
+          setAiConfigs(serverConfigs);
+          localStorage.setItem('aiConfigs', JSON.stringify(serverConfigs));
+          if (!activeModel && serverConfigs.length > 0 && serverConfigs[0].models?.length > 0) {
+            setActiveModel(serverConfigs[0].models[0]);
+            localStorage.setItem('activeModel', serverConfigs[0].models[0]);
+          }
+        }
+      })
+      .catch(err => console.warn('Could not load AI configs from server:', err.message));
+  }, []);
+
+  const syncAiConfigsToServer = (configs) => {
+    localStorage.setItem('aiConfigs', JSON.stringify(configs));
+    axios.put('/users/ai-configs', { aiConfigs: configs }).catch(err => 
+      console.warn('Could not sync AI configs to server:', err.message)
+    );
+  };
+
   const handleAddAiConfig = () => {
     if (!newConfigKey.trim() || !newConfigModels.trim()) return;
     const modelsArray = newConfigModels.split(',').map(m => m.trim()).filter(Boolean);
     const newConfig = { provider: newConfigProvider, apiKey: newConfigKey, models: modelsArray };
     const updated = [...aiConfigs, newConfig];
     setAiConfigs(updated);
-    localStorage.setItem('aiConfigs', JSON.stringify(updated));
+    syncAiConfigsToServer(updated);
     if (!activeModel && modelsArray.length > 0) {
       setActiveModel(modelsArray[0]);
       localStorage.setItem('activeModel', modelsArray[0]);
@@ -301,7 +325,7 @@ const Project = () => {
   const handleRemoveAiConfig = (index) => {
     const updated = aiConfigs.filter((_, i) => i !== index);
     setAiConfigs(updated);
-    localStorage.setItem('aiConfigs', JSON.stringify(updated));
+    syncAiConfigsToServer(updated);
   };
 
   const getActiveModelProvider = () => {

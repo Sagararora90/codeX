@@ -390,3 +390,36 @@ export const updateThemeController = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 }
+
+// Save AI Configs
+export const updateAiConfigsController = async (req, res) => {
+    try {
+        const { aiConfigs } = req.body;
+        
+        if (!Array.isArray(aiConfigs)) {
+            return res.status(400).json({ error: 'aiConfigs must be an array' });
+        }
+        
+        const user = await userModel.findOneAndUpdate(
+            { email: req.user.email },
+            { aiConfigs },
+            { new: true }
+        ).select('-password');
+        
+        res.status(200).json({ aiConfigs: user.aiConfigs, message: 'AI configs saved successfully' });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ error: error.message });
+    }
+}
+
+// Get AI Configs
+export const getAiConfigsController = async (req, res) => {
+    try {
+        const user = await userModel.findOne({ email: req.user.email }).select('aiConfigs');
+        res.status(200).json({ aiConfigs: user?.aiConfigs || [] });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ error: error.message });
+    }
+}
